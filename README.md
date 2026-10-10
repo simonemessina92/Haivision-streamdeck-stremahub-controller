@@ -1,31 +1,41 @@
 # Haivision StreamHub Controller for Stream Deck XL
 
-Standalone Windows plugin with a complete 32-key controller for StreamHub inputs, outputs, encoders and Mojo Pro. Includes video previews, routing, recording, intercom, video return, camera controls and bulk operations. Independent community project; not an official Haivision or Elgato product.
+Control a StreamHub from a Stream Deck XL, using a supplied profile that fills all 32 keys. Inputs, outputs, encoders and Mojo Pro each have their own section.
 
-## Install
+The plugin includes video previews, source routing, recording, intercom, video return, camera controls and bulk actions. Controls appear according to what the connected StreamHub and devices support.
 
-**Requirements:** Windows 10 or later, Stream Deck app 7.1 or later, and a Stream Deck XL (32 keys). Chrome, Companion and a separate Node.js installation are not required.
+## Download and install
 
-1. Download the ZIP from [the latest release](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/latest) and extract it.
-2. Open `haivision-streamdeck-streamhub-plugin.streamDeckPlugin` and approve installation.
-3. Accept and select the supplied **StreamHub XL** profile. All 32 keys are already populated. If the profile is not added automatically, open the included `StreamHub XL.streamDeckProfile`.
-4. In the Stream Deck app, select the top-right **ONLINE / OFFLINE** key. Enter a name, StreamHub address, API key and web username/password, then **Save and connect**.
+**[Download v0.13.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.13.0/haivision-streamdeck-streamhub-plugin-v0.13.0.zip)**
 
-Web login enables previews and device features. If a preview session expires, enter the password again and reconnect. Available controls depend on the connected StreamHub and devices.
+You need Windows 10 or later, Stream Deck app 7.1 or later, and a **Stream Deck XL with 32 keys**.
 
-## More StreamHubs
+1. Extract the ZIP and open `haivision-streamdeck-streamhub-plugin.streamDeckPlugin`.
+2. Approve the installation, then accept and select the **StreamHub XL** profile. If it is not imported automatically, open `StreamHub XL.streamDeckProfile` from the ZIP.
+3. In the Stream Deck app, select the **ONLINE / OFFLINE** key in the top-right corner.
+4. Enter a name for the unit, its address and API key, plus the web username and password. Click **Save and connect**.
 
-**ADD STREAMHUB** creates another entry; configure it from **ONLINE / OFFLINE** in the app. **NEXT HUB** cycles configured units in the same XL panel, without a fixed unit limit. The name above ONLINE identifies the current unit. **PAGE** cycles assets within that unit.
+The web login is used for previews and device features. If the preview session expires, enter the password again and reconnect. Chrome, Companion and a separate Node.js installation are not needed to use the plugin.
 
-## Disconnect
+Once the plugin is installed and the profile imported, you can delete the downloaded ZIP and its extracted files. Stream Deck keeps its own copies of the plugin and profile. Keep the Stream Deck app installed and running.
 
-Passwords are used for login and are not saved. Address, API key, username and preview token are stored locally in Stream Deck settings. **Disconnect** closes the selected unit's sessions and forgets all its access details; its name remains, and other saved units are unaffected. Personal settings and backups must not be shared.
+## Switching StreamHubs
 
-## Development
+Press **ADD STREAMHUB**, then configure the new unit from **ONLINE / OFFLINE** in the app. **NEXT HUB** cycles through your configured units in the same panel; the name above ONLINE shows which one you are controlling. There is no fixed limit on saved units.
 
-`main` contains stable releases; `develop` is for upcoming changes. The initial stable release is **v0.13.0**, tested on Windows with a Stream Deck XL, including reconnection after a PC restart.
+**PAGE** moves between pages of inputs, outputs or encoders within the current unit.
 
-With Node.js 24 installed:
+## Saved access details
+
+The password is used to log in and is not saved. Stream Deck stores the address, API key, username and preview token locally so the plugin can reconnect after a restart.
+
+**Disconnect** closes that unit's sessions and removes its access details. Its name stays in the list, and the other saved units are left alone. You will need to enter the connection details again to reconnect it. Do not share your personal settings or backups.
+
+## Building from source
+
+`main` is the stable branch; `develop` is for ongoing work. Version **0.13.0** was tested on Windows with a Stream Deck XL, including reconnection after a PC restart.
+
+Install Node.js 24, then run:
 
 ```sh
 npm ci
@@ -35,4 +45,6 @@ npm run validate
 npm run pack
 ```
 
-The build is self-contained. The installer is generated in `dist/`. See [the quick start](docs/QUICK%20START.txt) for further setup details.
+The installer is written to `dist/`. The repository contains everything needed to build it.
+
+This is an independent project, not an official Haivision or Elgato plugin.
