@@ -9,6 +9,6 @@
     "pack": "streamdeck pack org.streamhub.controller.sdPlugin --output dist --force && node package-release.js"
   },
   "devDependencies": {
-    "@elgato/cli": "^1.5.0"
+    "@elgato/cli": "1.10.2"
   }
 }
