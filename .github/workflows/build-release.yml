@@ -1,0 +1,55 @@
+name: Build and release
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run validate
+      - run: npm run pack
+      - name: Package release
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          Compress-Archive -LiteralPath 'dist/haivision-streamdeck-streamhub-plugin.streamDeckPlugin','dist/StreamHub XL.streamDeckProfile','dist/QUICK START.txt' -DestinationPath "dist/haivision-streamdeck-streamhub-plugin-v$version.zip"
+          Get-ChildItem dist -File | Where-Object { $_.Extension -in '.zip','.streamDeckPlugin','.streamDeckProfile' } | ForEach-Object { $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256; "$($hash.Hash.ToLower())  $($_.Name)" } | Set-Content -Path dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: streamhub-xl
+          path: |
+            dist/*.streamDeckPlugin
+            dist/*.streamDeckProfile
+            dist/*.zip
+            dist/SHA256SUMS.txt
+      - name: Publish stable release
+        if: github.ref == 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const version = JSON.parse(fs.readFileSync('package.json')).version;
+            const tag = 'v' + version;
+            try {
+              await github.rest.repos.getReleaseByTag({...context.repo, tag});
+              core.info('Existing stable release is preserved: ' + tag);
+              return;
+            } catch (error) { if (error.status !== 404) throw error; }
+            const release = await github.rest.repos.createRelease({...context.repo, tag_name: tag, target_commitish: context.sha, name: 'StreamHub XL ' + tag, body: fs.readFileSync('RELEASE_NOTES.md', 'utf8'), draft: true, prerelease: false});
+            for (const name of ['haivision-streamdeck-streamhub-plugin.streamDeckPlugin', 'haivision-streamdeck-streamhub-plugin-v' + version + '.zip', 'StreamHub XL.streamDeckProfile', 'SHA256SUMS.txt']) {
+              await github.rest.repos.uploadReleaseAsset({...context.repo, release_id: release.data.id, name, data: fs.readFileSync('dist/' + name)});
+            }
+            await github.rest.repos.updateRelease({...context.repo, release_id: release.data.id, draft: false, make_latest: 'true'});

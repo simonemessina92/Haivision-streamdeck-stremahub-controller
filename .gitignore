@@ -1,0 +1,9 @@
+node_modules/
+dist/
+org.streamhub.controller.sdPlugin/
+backups/
+diagnostics/
+*.log
+.env
+.env.*
+*.bin
