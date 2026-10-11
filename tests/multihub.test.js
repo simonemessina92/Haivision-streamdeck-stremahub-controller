@@ -10,7 +10,7 @@ function broker(){let socket;const sessions=[],timers=[];
   dispose(){this.disposed=true;this.revision++;}
  }
  class Socket{constructor(){this.readyState=1;this.handlers={};this.sent=[];socket=this;}addEventListener(k,fn){this.handlers[k]=fn;}send(raw){this.sent.push(JSON.parse(raw));}}
- const local=createRequire(root+'/bin/plugin.js');vm.runInNewContext(fs.readFileSync(root+'/bin/plugin.js','utf8'),{require:n=>n==='./engine'?{Engine:Session}:local(n),process:{argv:['node','plugin','-port','1','-pluginUUID','plugin','-registerEvent','registerPlugin','-info',JSON.stringify({devices:[{id:'xl',type:2},{id:'small',type:0}]})],exit(){}},Buffer,WebSocket:Socket,setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){}});
+ const local=createRequire(root+'/bin/plugin.js');vm.runInNewContext(fs.readFileSync(root+'/bin/plugin.js','utf8'),{require:n=>n==='./engine'?{Engine:Session}:local(n),process:{argv:['node','plugin','-port','1','-pluginUUID','plugin','-registerEvent','registerPlugin','-info',JSON.stringify({devices:[{id:'xl',type:2},{id:'small',type:0},{id:'mobile',type:3,size:{columns:8,rows:4}},{id:'mobile-small',type:3,size:{columns:5,rows:3}}]})],exit(){}},Buffer,WebSocket:Socket,setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){}});
  const send=m=>socket.handlers.message({data:JSON.stringify(m)}),settle=()=>new Promise(r=>setImmediate(r));
  const appear=(context,id='default',slot=7,device='xl',launcher=false)=>send({event:'willAppear',action:launcher?'org.streamhub.controller.open':'org.streamhub.controller.surface',context,device,payload:{coordinates:{row:Math.floor(slot/8),column:slot%8},settings:{slot,connectionId:id}}});
  const request=(context,type,extra={})=>send({event:'sendToPlugin',context,payload:{type,...extra}});
@@ -65,4 +65,30 @@ test('ADD STREAMHUB creates an empty independent entry and disconnect forgets on
 test('migration forgets access details of previously disconnected units and strips old password storage',async()=>{
  const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{address:'legacy-address',key:'legacy-key',previewPassword:'old-password',connections:{default:{name:'Forgotten',disconnected:true,address:'old-address',key:'old-key',previewUsername:'old-user',previewToken:'old-token',previewPassword:'old-password'},other:{name:'Keep',address:'192.0.2.2',key:'keep-key',previewPassword:'old-password'}}}}});
  const cfg=b.socket.sent.filter(m=>m.event==='setGlobalSettings').at(-1).payload;assert.deepEqual(Object.keys(cfg),['connections']);assert.ok(!JSON.stringify(cfg).includes('old-'));assert.equal(cfg.connections.other.key,'keep-key');assert.equal(cfg.connections.default.name,'Forgotten');
+});
+
+test('Mobile 8 x 4 commands work and smaller Mobile layouts are rejected',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{default:{address:'192.0.2.1',key:'test'}}}}});b.appear('mobile-online','default',7,'mobile');b.appear('mobile-asset','default',16,'mobile');await b.settle();
+ const e=b.sessions.find(e=>e.device==='mobile');b.send({event:'keyDown',context:'mobile-asset'});await b.settle();assert.equal(e.commands.length,1);assert.ok(!b.socket.sent.some(m=>m.event==='showAlert'));
+ b.appear('small-online','default',7,'mobile-small');b.appear('small-asset','default',16,'mobile-small');b.send({event:'keyDown',context:'small-asset'});await b.settle();assert.ok(b.socket.sent.some(m=>m.event==='showAlert'&&m.context==='small-asset'));
+});
+test('Mobile connected after plugin startup is recognized and resizing updates eligibility',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{default:{address:'192.0.2.1',key:'test'}}}}});b.send({event:'deviceDidConnect',device:'late-mobile',deviceInfo:{type:3,size:{columns:8,rows:4}}});b.appear('late-online','default',7,'late-mobile');b.appear('late-asset','default',16,'late-mobile');await b.settle();const e=b.sessions.at(-1);
+ b.send({event:'keyDown',context:'late-asset'});await b.settle();assert.equal(e.commands.length,1);
+ b.send({event:'deviceDidChange',device:'late-mobile',deviceInfo:{type:3,size:{columns:5,rows:3}}});b.send({event:'keyDown',context:'late-asset'});await b.settle();assert.equal(e.commands.length,1);assert.ok(b.socket.sent.some(m=>m.event==='showAlert'));
+});
+test('Mobile disconnect and reconnect rebuild sessions, preserve credentials and ignore late tokens',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{other:{name:'Tablet',address:'192.0.2.2',key:'test',previewToken:'saved-token'}}}}});b.appear('mobile-online','other',7,'mobile');b.appear('mobile-asset','other',16,'mobile');await b.settle();const old=b.sessions.at(-1);
+ b.send({event:'deviceDidDisconnect',device:'mobile'});old.options.onPreviewToken('late-token');b.send({event:'keyDown',context:'mobile-asset'});await b.settle();assert.equal(old.disposed,true);assert.equal(old.commands.length,0);
+ b.send({event:'deviceDidConnect',device:'mobile',deviceInfo:{type:3,size:{columns:8,rows:4}}});await b.settle();const current=b.sessions.at(-1);assert.notEqual(current,old);assert.equal(current.settings.address,'192.0.2.2');assert.equal(current.settings.previewToken,'saved-token');b.send({event:'keyDown',context:'mobile-asset'});await b.settle();assert.equal(current.commands.length,1);
+ b.request('mobile-online','status');const report=b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload;assert.equal(report.configurationAllowed,true);assert.equal(report.connectionId,'other');assert.ok(!JSON.stringify(b.socket.sent).includes('late-token'));
+ b.request('mobile-online','disconnect');await b.settle();b.send({event:'deviceDidDisconnect',device:'mobile'});b.send({event:'deviceDidConnect',device:'mobile',deviceInfo:{type:3,size:{columns:8,rows:4}}});await b.settle();assert.equal(b.sessions.at(-1).settings.address,undefined);
+});
+test('ONLINE inspector recovers missing action context through settings without enabling asset configuration',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{}}});b.send({event:'propertyInspectorDidAppear',context:'restored-online',device:'mobile'});assert.ok(b.socket.sent.some(m=>m.event==='getSettings'&&m.context==='restored-online'));
+ b.send({event:'didReceiveSettings',context:'restored-online',device:'mobile',action:'org.streamhub.controller.surface',payload:{settings:{slot:7,connectionId:'default'}}});await b.settle();const report=b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload;assert.equal(report.configurationAllowed,true);
+ b.send({event:'didReceiveSettings',context:'asset-settings',device:'mobile',action:'org.streamhub.controller.surface',payload:{settings:{slot:16}}});b.request('asset-settings','status');assert.equal(b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload.configurationAllowed,false);
+});
+test('profile slot mapping keeps ONLINE at slot 7 when Mobile coordinates differ',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{}}});b.send({event:'willAppear',context:'online',device:'mobile',action:'org.streamhub.controller.surface',payload:{coordinates:{row:1,column:2},settings:{slot:7}}});b.request('online','status');assert.equal(b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload.configurationAllowed,true);
 });

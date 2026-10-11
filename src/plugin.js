@@ -4,6 +4,7 @@ const args=process.argv.slice(2),option=name=>args[args.indexOf(name)+1],registr
 const port=option('-port'),uuid=option('-pluginUUID'),registration=option('-registerEvent');
 if(!port||!uuid||!registration)throw Error('This plugin must be started by Stream Deck.');
 const ws=new WebSocket('ws://127.0.0.1:'+port),contexts=new Map(),engines=new Map(),settings={address:'',key:'',demo:false,connections:{}};
+const devices=new Map((registrationInfo.devices||[]).map(d=>[d.id,d])),offlineDevices=new Set(),suspended=new Map();
 const active=new Map(),anchors=new Map(),launches=new Map(),operations=new Map();let ready=false,inspector=null,polling=false,pollTimer=null,serial=0;
 const send=(event,context,payload)=>{if(ws.readyState===1)ws.send(JSON.stringify({event,context,payload}));};
 function saved(id='default'){if(!settings.connections[id])settings.connections[id]=id==='default'?{address:settings.address||'',key:settings.key||'',name:settings.name||'',previewOrigin:settings.previewOrigin,previewUsername:settings.previewUsername,previewToken:settings.previewToken,disconnected:settings.disconnected,demo:settings.demo}:{};return settings.connections[id];}
@@ -70,24 +71,50 @@ async function disconnect(requestId){
  for(const device of devices){const e=engine(device,id,false);await e.configure({name:cfg.name});}
  report({phase:'complete',requestId,status:'Disconnected',credentialsCleared:true,error:'',previewStatus:''});op.requestId=null;
 }
-function isXL(device){const d=registrationInfo.devices?.find(d=>d.id===device);return !d||d.type===2;}
+function supportedDevice(device){
+ const d=devices.get(device);if(d?.type===2)return true;
+ if(d?.type!==3)return false;
+ // Older SDK metadata reports the maximum Mobile canvas (8 x 8).
+ // The controller uses its stored 32 slots within the first four rows.
+ return !d.size||d.size.columns===8&&d.size.rows>=4;
+}
+function surfaceSlot(payload={}){const stored=payload.settings?.slot;if(Number.isInteger(stored)&&stored>=0&&stored<32)return stored;const p=payload.coordinates;return p&&p.column>=0&&p.column<8&&p.row>=0&&p.row<4?p.row*8+p.column:NaN;}
+function restoreInspectorContext(m){
+ const context=m.context,c=contexts.get(context);if(c)return c;
+ const slot=surfaceSlot(m.payload),device=m.device||inspector?.device;
+ if(!device||!Number.isInteger(slot))return null;
+ const row={device,slot,launcher:m.action==='org.streamhub.controller.open',settings:{...(m.payload.settings||{})},sig:null};contexts.set(context,row);
+ if(slot===7&&!row.launcher){anchors.set(device,context);active.set(device,row.settings.connectionId||suspended.get(device)||'default');engine(device);}
+ return row;
+}
+function resumeDevice(device){
+ offlineDevices.delete(device);const anchor=contexts.get(anchors.get(device));if(anchor)active.set(device,anchor.settings.connectionId||suspended.get(device)||'default');
+ if(active.has(device))engine(device);for(const row of contexts.values())if(row.device===device){row.sig=null;row.titleCleared=false;}render(device);report();
+}
+
 async function onMessage(message){
  const m=JSON.parse(String(message.data));
+ if(m.event==='deviceDidConnect'||m.event==='deviceDidChange'){devices.set(m.device,{id:m.device,...m.deviceInfo});resumeDevice(m.device);return;}
  if(m.event==='didReceiveGlobalSettings'){if(!ready){Object.assign(settings,m.payload.settings||{},{demo:false});settings.connections||={};saved();for(const cfg of Object.values(settings.connections)){delete cfg.previewPassword;cfg.demo=false;if(cfg.disconnected)for(const field of accessFields)delete cfg[field];}ready=true;persist();
   // Existing installations retain the current layout. New installs receive the bundled XL profile.
   for(const e of engines.values()){const cfg=saved(e.connectionId);void e.configure(cfg.disconnected?{name:cfg.name}:cfg).catch(error=>{if(!e.disposed)failure(error);});}for(const c of contexts.values())render(c.device);report();}return;}
  if(m.event==='willAppear'){
-  const launcher=m.action==='org.streamhub.controller.open',coordinate=m.payload.coordinates,slot=coordinate?coordinate.row*8+coordinate.column:Number(m.payload.settings.slot);
+  const launcher=m.action==='org.streamhub.controller.open',slot=surfaceSlot(m.payload);
   if(!launcher&&(!Number.isInteger(slot)||slot<0||slot>31))return;
   const c={device:m.device,slot,launcher,settings:{...(m.payload.settings||{})},sig:null};contexts.set(m.context,c);
-  if(!launcher&&slot===7){anchors.set(m.device,m.context);if(c.settings.surfacePages>1)launches.delete(m.device);const pending=launches.get(m.device);const id=pending?.pending?pending.id:c.settings.connectionId||'default';active.set(m.device,id);if(pending?.pending){pending.pending=false;c.settings.connectionId=id;send('setSettings',m.context,c.settings);}if(c.settings.pageName&&!saved(id).name)saved(id).name=c.settings.pageName;engine(m.device,id);}
+  if(!launcher&&slot===7){anchors.set(m.device,m.context);if(c.settings.surfacePages>1)launches.delete(m.device);const pending=launches.get(m.device);const id=pending?.pending?pending.id:c.settings.connectionId||suspended.get(m.device)||'default';active.set(m.device,id);if(pending?.pending){pending.pending=false;c.settings.connectionId=id;send('setSettings',m.context,c.settings);}if(c.settings.pageName&&!saved(id).name)saved(id).name=c.settings.pageName;engine(m.device,id);}
   else if(launcher)engine(m.device,rowConnection(c));
-  render(m.device);return;
+  offlineDevices.delete(m.device);render(m.device);report();return;
  }
- if(m.event==='didReceiveSettings'){const c=contexts.get(m.context);if(c){c.settings={...(m.payload.settings||{})};if(!c.launcher&&c.slot===7){const launch=launches.get(c.device);if(launch)c.settings.connectionId=launch.id;active.set(c.device,c.settings.connectionId||'default');}engine(c.device,rowConnection(c));render(c.device);report();}return;}
+ if(m.event==='didReceiveSettings'){const c=contexts.get(m.context)||restoreInspectorContext(m);if(c){c.settings={...(m.payload.settings||{})};if(!c.launcher&&c.slot===7){const launch=launches.get(c.device);if(launch)c.settings.connectionId=launch.id;active.set(c.device,c.settings.connectionId||'default');}engine(c.device,rowConnection(c));render(c.device);report();}return;}
  if(m.event==='willDisappear'){hold.stop(m.context);const c=contexts.get(m.context);contexts.delete(m.context);if(c&&!c.launcher&&c.slot===7&&anchors.get(c.device)===m.context){anchors.delete(c.device);active.delete(c.device);for(const e of engines.values())if(e.device===c.device)e.revision++;}return;}
- if(m.event==='deviceDidDisconnect'){for(const [id,c]of contexts)if(c.device===m.device){hold.stop(id);contexts.delete(id);}for(const [key,e]of engines)if(e.device===m.device){e.dispose();engines.delete(key);}active.delete(m.device);launches.delete(m.device);return;}
- if(m.event==='propertyInspectorDidAppear'){inspector={context:m.context,device:m.device};report();return;}
+ if(m.event==='deviceDidDisconnect'){
+  offlineDevices.add(m.device);if(active.has(m.device))suspended.set(m.device,active.get(m.device));
+  for(const [id,c]of contexts)if(c.device===m.device){hold.stop(id);c.sig=null;c.titleCleared=false;}
+  for(const [key,e]of engines)if(e.device===m.device){e.dispose();engines.delete(key);}
+  launches.delete(m.device);report({status:'Stream Deck device disconnected. Waiting for reconnection.',error:''});return;
+ }
+ if(m.event==='propertyInspectorDidAppear'){inspector={context:m.context,device:m.device};if(!contexts.has(m.context))send('getSettings',m.context,{});report();return;}
  if(m.event==='propertyInspectorDidDisappear'){inspector=null;return;}
  if(m.event==='sendToPlugin'){
   const target=m.payload.actionContext||m.context,c=contexts.get(target);inspector={context:target,device:c?.device||m.device||inspector?.device};
@@ -100,7 +127,8 @@ async function onMessage(message){
  if(m.event==='keyUp'){hold.stop(m.context);return;}
  if(m.event==='keyDown'){
   const c=contexts.get(m.context);if(!c)return;
-  if(!isXL(c.device)){failure(Error('This controller requires a Stream Deck XL with 32 keys'),m.context);return;}
+  if(offlineDevices.has(c.device))return;
+  if(!supportedDevice(c.device)){failure(Error('Use Stream Deck XL or Stream Deck Mobile with an 8 x 4 controller layout'),m.context);return;}
   if(c.launcher){hold.stopAll();const id=rowConnection(c);launches.set(c.device,{id,pending:true});ws.send(JSON.stringify({event:'switchToProfile',context:uuid,device:c.device,payload:{profile:'profiles/StreamHub XL',page:0}}));return;}
   if(!active.has(c.device))return;
   if(c.slot===5){const ids=hubIds(c.device),index=ids.indexOf(active.get(c.device));if(ids.length>1)selectHub(c.device,ids[(index+1)%ids.length]);return;}
@@ -119,7 +147,7 @@ ws.addEventListener('message',m=>{void onMessage(m).catch(error=>failure(error))
 ws.addEventListener('error',()=>hold.stopAll());
 ws.addEventListener('close',()=>{hold.stopAll();clearTimeout(pollTimer);for(const e of engines.values())e.dispose();process.exit(0);});
 async function poll(){
- if(!polling&&!hold.active.size){polling=true;try{for(const [device,id]of active){const e=engines.get(sessionKey(device,id));if(e&&!operations.get(id)?.busy){if(e.s.view!=='mojo'||Date.now()-(e.lastMojoActivity||0)>1000)await e.refresh();await e.readPreview();}}}finally{polling=false;}}
+ if(!polling&&!hold.active.size){polling=true;try{for(const [device,id]of active){if(offlineDevices.has(device))continue;const e=engines.get(sessionKey(device,id));if(e&&!operations.get(id)?.busy){if(e.s.view!=='mojo'||Date.now()-(e.lastMojoActivity||0)>1000)await e.refresh();await e.readPreview();}}}finally{polling=false;}}
  pollTimer=setTimeout(poll,1800);
 }
 pollTimer=setTimeout(poll,1800);

@@ -1,10 +1,20 @@
-STREAMHUB XL — QUICK START — 0.13.0
+STREAMHUB XL — QUICK START — 0.14.0
 
 INSTALL
-Windows 10+, Stream Deck app 7.1+, Stream Deck XL (32 keys).
+Windows 10+, Stream Deck app 7.1+, Stream Deck XL or Stream Deck Mobile (32 keys, 8 columns x 4 rows).
 Open haivision-streamdeck-streamhub-plugin.streamDeckPlugin and accept the StreamHub XL profile.
 One complete 32-key panel is supplied. No Chrome, Companion or separate Node.js required.
 If upgrading an existing installation, import StreamHub XL.streamDeckProfile if needed.
+
+MOBILE SETUP
+Install Stream Deck Mobile for Android or iOS/iPadOS:
+Android: https://play.google.com/store/apps/details?id=com.corsair.android.streamdeck
+Apple: https://apps.apple.com/app/elgato-stream-deck-mobile/id1440014184
+Connect it to the Windows Stream Deck app, set 32 keys in an 8 x 4 layout,
+and copy the supplied StreamHub XL profile to the Mobile device from the desktop app.
+This layout requires Mobile Pro. Keep the same layout when rotating the device.
+A temporary Mobile disconnection preserves access details and restores the session
+when Mobile reconnects. The explicit Disconnect command still forgets credentials.
 
 CONNECT
 Select the top-right ONLINE / OFFLINE key in the Stream Deck app.
