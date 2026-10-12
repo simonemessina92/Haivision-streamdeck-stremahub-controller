@@ -93,7 +93,7 @@ function layout(s){
   a[16]=key(o.enabled?'TURN OFF':'TURN ON',{type:'outputPower',key:o.key,enabled:!o.enabled},o.enabled?COLORS.danger:COLORS.on,{disabled:o.locked||!o.powerAvailable,glyph:o.enabled?'stop':'play'});
   a[19]=key('SELECT\nINPUT',{type:'pick',kind:'outputInput',key:o.key},COLORS.nav,{disabled:o.locked||!o.powerAvailable,glyph:'route'});
   if(o.type==='IP'&&o.canCopyLink)a[26]=key('COPY LINK',{type:'pick',kind:'copyLink',asset:'output',key:o.key},COLORS.nav,{icon:'Link'});
-  a[20]=key('SOURCE\n'+(o.source===33?'MULTIVIEW':o.source?'IN '+o.source:o.encoder?'ENC '+o.encoder:'NONE'),null,COLORS.info,{kind:'heading'});
+  a[20]=key('SOURCE\n'+(o.encoder?'ENC '+o.encoder:o.source===33?'MULTIVIEW':o.source?'IN '+o.source:'NONE'),null,COLORS.info,{kind:'heading'});
   a[31]=key('EJECT',{type:'ejectOutput',key:o.key},COLORS.danger,{disabled:o.locked||!o.powerAvailable||!canEjectOutput(s.data,o),glyph:'eject'});
  }else if(s.view==='encoder'){
   const e=s.encoders.find(e=>e.id===s.selected.id&&e.profile!=='-1');
@@ -102,6 +102,7 @@ function layout(s){
   a[16]=key(e.enabled?'TURN OFF':'TURN ON',{type:'encoderPower',id:e.id,enabled:!e.enabled},e.enabled?COLORS.danger:COLORS.on,{glyph:e.enabled?'stop':'play'});
   a[19]=key('SELECT\nINPUT',{type:'pick',kind:'encoderInput',encoder:e.id},COLORS.nav,{glyph:'route'});
   a[20]=key('SOURCE\n'+(e.input===33?'MULTIVIEW':e.input?'IN '+e.input:'NONE'),null,COLORS.info,{kind:'heading'});
+  a[21]=key('ROUTE TO\nOUTPUT',{type:'pick',kind:'encoderRoute',encoder:e.id},COLORS.nav,{glyph:'route'});
   a[24]=key('CHANGE\nPROFILE',{type:'pick',kind:'encoderProfile',encoder:e.id},COLORS.action,{disabled:e.enabled});
   a[31]=key('EJECT',{type:'ejectEncoder',id:e.id},COLORS.danger,{glyph:'eject'});
  }else if(s.view==='mojo'){
@@ -152,17 +153,18 @@ function layout(s){
    a[12]=p.group==='IP'?key(p.encoder?'ENC '+p.encoder:'SELECT\nENCODER',{type:'pick',kind:'multiviewEncoder'},COLORS.nav):key('DIRECT\nMULTIVIEW',null,COLORS.info,{kind:'heading'});
    a[14]=key('CANCEL',{type:'back'},COLORS.nav);a[15]=key('CONFIRM\n'+p.selectedKeys.length,{type:'multiviewRouteConfirm'},COLORS.nav,{disabled:!p.selectedKeys.length});
    if(p.decision){a[4]=key('BACK',{type:'multiviewRouteReview'},COLORS.nav);a[16]=key('ASSIGN\nONLY',{type:'multiviewRouteApply',goLive:false},COLORS.nav);a[18]=key('ASSIGN &\nGO LIVE',{type:'multiviewRouteApply',goLive:true},COLORS.on);a[20]=key(p.encoder?'MULTIVIEW\nENCODER\nOUTPUTS ON':'MULTIVIEW\nOUTPUTS ON',null,COLORS.info,{kind:'heading'});}
-   else if(p.group==='IP'&&!p.encoder){a[16]=key('SELECT\nENCODER',{type:'pick',kind:'multiviewEncoder'},COLORS.nav);a[18]=key('MULTIVIEW\n→ ENCODER\n→ IP',null,COLORS.info,{kind:'heading'});}
+   else if(p.group==='IP'&&!p.encoder){a[18]=key('MULTIVIEW\n→ ENCODER\n→ IP',null,COLORS.info,{kind:'heading'});}
    else list(s.data.outputs.filter(o=>outputGroup(o)===p.group),o=>{const assigned=p.group==='IP'?o.encoder===p.encoder&&s.encoders.some(e=>e.id===p.encoder&&e.input===33):o.source===33,selected=p.selectedKeys.includes(o.key);return key(o.type+' '+o.id+'\n'+o.name+'\n'+(assigned?'ASSIGNED':''),{type:'choose',item:{command:{type:'multiviewRouteSelect',key:o.key}}},selected?COLORS.on:COLORS.action,{kind:'asset',active:selected,disabled:assigned||o.locked||!o.powerAvailable});},'NO OUTPUTS');return a;
   }
 
-  const label={liveProfile:'LIVE PROFILE',copyLink:'COPY LINK',videoReturn:'VIDEO RETURN',route:'ROUTE OUTPUT',outputInput:'SELECT INPUT',encoderInput:'SELECT INPUT',encoderProfile:'CHANGE PROFILE',encoderAdd:'ADD ENCODER',outputAdd:'ADD OUTPUT',inputProfile:'IP PROFILE',camera:'SELECT CAMERA',shutterUnits:'SHUTTER UNITS',multiviewInput:'SELECT INPUT',multiviewEncoder:'SELECT ENCODER'}[s.picker.kind]||'SELECT';
+  const label={routeEncoder:'SELECT ENCODER',inputEncoder:'SELECT ENCODER',encoderRoute:'ROUTE ENCODER',liveProfile:'LIVE PROFILE',copyLink:'COPY LINK',videoReturn:'VIDEO RETURN',route:'ROUTE OUTPUT',outputInput:'SELECT INPUT',encoderInput:'SELECT INPUT',encoderProfile:'CHANGE PROFILE',encoderAdd:'ADD ENCODER',outputAdd:'ADD OUTPUT',inputProfile:'IP PROFILE',camera:'SELECT CAMERA',shutterUnits:'SHUTTER UNITS',multiviewInput:'SELECT INPUT',multiviewEncoder:'SELECT ENCODER'}[s.picker.kind]||'SELECT';
   const inputPicker=['outputInput','encoderInput'].includes(s.picker.kind),ready=s.picker.readiness!=='NOT READY';
   const routePicker=s.picker.kind==='route';
-  const items=s.picker.kind==='liveProfile'?s.picker.items.map(item=>{const input=s.data.inputs.find(i=>i.id===item.command.input&&i.uid===item.command.uid),p=input?.liveProfiles?.find(p=>p.id===item.command.profile),active=p?.id===input?.liveProfileId;return {...item,title:(p?.name||'UNAVAILABLE')+'\n'+(active?'CURRENT':''),active,disabled:!input?.connected||!p||input.liveProfileInstance!==item.command.instance};}):inputPicker?s.picker.items.filter(item=>item.ready===ready):routePicker?s.picker.items.filter(item=>item.group===s.picker.group).map(item=>{const o=s.data.outputs.find(o=>o.key===item.command.key),assigned=o?.source===s.picker.input;return {...item,title:assigned?o.type+' '+o.id+'\n'+String(o.name).slice(0,12)+'\nALREADY\nASSIGNED':item.title,disabled:assigned||!o||o.locked||!o.powerAvailable};}):s.picker.items;
+  const items=s.picker.kind==='liveProfile'?s.picker.items.map(item=>{const input=s.data.inputs.find(i=>i.id===item.command.input&&i.uid===item.command.uid),p=input?.liveProfiles?.find(p=>p.id===item.command.profile),active=p?.id===input?.liveProfileId;return {...item,title:(p?.name||'UNAVAILABLE')+'\n'+(active?'CURRENT':''),active,disabled:!input?.connected||!p||input.liveProfileInstance!==item.command.instance};}):inputPicker?s.picker.items.filter(item=>(item.command?.multiview?!!s.multiview?.enabled:item.ready)===ready):routePicker?s.picker.items.filter(item=>item.group===s.picker.group).map(item=>{const o=s.data.outputs.find(o=>o.key===item.command.key),assigned=s.picker.encoder?o?.encoder===s.picker.encoder&&s.encoders.some(e=>e.id===s.picker.encoder&&e.input===s.picker.input):o?.source===s.picker.input&&!o.encoder;return {...item,title:assigned?o.type+' '+o.id+'\n'+String(o.name).slice(0,12)+'\nALREADY\nASSIGNED':item.title,disabled:assigned||!o||o.locked||!o.powerAvailable};}):s.picker.items;
   header(label,items.length+' OPTIONS');
   if(routePicker&&!s.picker.decision){
-   const groups=supportedGroups(s);groups.forEach((group,n)=>a[9+n]=key(group,{type:'routeGroup',group},COLORS.nav,{kind:'tab',active:s.picker.group===group}));
+   const groups=supportedGroups(s).filter(group=>!s.picker.encoder||group!=='NDI');groups.forEach((group,n)=>a[9+n]=key(group,{type:'routeGroup',group},COLORS.nav,{kind:'tab',active:s.picker.group===group}));
+   a[13]=key(s.picker.encoder?'ENC '+s.picker.encoder:'ADD TO\nENCODER',{type:'pick',kind:'routeEncoder'},COLORS.nav,{glyph:'route'});
    a[12]=key(s.picker.selectedKeys.length+' SELECTED',null,COLORS.info,{kind:'heading'});
    a[14]=key('CANCEL',{type:'back'},COLORS.nav);
    a[15]=key('CONFIRM\n'+(s.picker.activationKeys?.length||s.picker.selectedKeys.length)+' OUTPUTS',{type:'routeConfirm'},COLORS.nav,{disabled:!s.picker.selectedKeys.length&&!s.picker.activationKeys?.length});
@@ -174,7 +176,7 @@ function layout(s){
    a[16]=key('ASSIGN\nONLY',{type:'routeApply',goLive:false},COLORS.nav);
    const input=s.data.inputs.find(i=>i.id===s.picker.input&&i.uid===s.picker.uid),available=input&&(input.canLive||input.protocolId>=0||s.demo&&input.connected);
    a[18]=key('ASSIGN &\nGO LIVE',{type:'routeApply',goLive:true},COLORS.on,{disabled:!available});
-   a[20]=key('INPUT +\nOUTPUTS ON',null,COLORS.info,{kind:'heading'});a[14]=key('CANCEL',{type:'back'},COLORS.nav);
+   a[20]=key(s.picker.encoder?'INPUT + ENC\n+ OUTPUTS ON':'INPUT +\nOUTPUTS ON',null,COLORS.info,{kind:'heading'});a[14]=key('CANCEL',{type:'back'},COLORS.nav);
   }else list(items,item=>{const selected=routePicker?s.picker.selectedKeys.includes(item.command?.key):!!item.active;const copied=s.picker.kind==='copyLink'&&!!s.picker.copied&&s.picker.copied===item.command?.url;return key(copied?'COPIED\n'+item.title:item.title,{type:'choose',item},selected||copied?COLORS.on:s.picker.kind==='copyLink'?COLORS.nav:COLORS.action,{disabled:item.disabled,active:selected||copied,kind:'asset'});},s.picker.kind==='copyLink'?'NO STREAM\nLINKS':routePicker?'NO '+s.picker.group+'\nOUTPUTS':inputPicker?(ready?'NO READY\nINPUTS':'NO NOT READY\nINPUTS'):'NO AVAILABLE\nPROFILES');
  
  }
@@ -188,10 +190,11 @@ function layout(s){
    const program=s.program?.selection===selection?s.program:null,live=program?.live===true;
    a[24]=key('OUTPUT\n'+(live?'LIVE':program?'READY':'NOT ROUTED'),null,live?COLORS.danger:COLORS.muted,{kind:'status'});
   }
- } if(s.view==='list'&&s.section!=='MOJO PRO'&&!s.outputBulk&&!s.inputBulk){
+ } if(s.view==='list'&&s.section!=='MOJO PRO'&&!s.outputBulk&&!s.inputBulk&&!s.encoderBulk){
   a[15]=key(s.bulk?'EJECT\n'+s.bulk.length+' SELECTED':s.section==='INPUT'?'BULK\nUNASSIGN\n/ EJECT':'BULK\nEJECT',{type:s.bulk?'bulkRun':'bulkStart'},COLORS.nav,{disabled:!!s.bulk&&!s.bulk.length});
   if(s.section==='INPUT'&&!s.bulk&&s.multiviewAvailable)a[13]=key('MULTIVIEW',{type:'multiview'},COLORS.nav,{icon:'Multiview',iconPosition:'bottom'});
   if(s.section==='INPUT'&&!s.bulk)a[14]=key('BULK\nON / OFF',{type:'inputBulkStart'},COLORS.nav);
+  if(s.section==='ENCODERS'&&!s.bulk)a[14]=key('BULK\nON / OFF',{type:'encoderBulkStart'},COLORS.nav);
   if(s.section==='OUTPUT'&&!s.bulk){a[13]=key('BULK\nON / OFF',{type:'outputBulkStart',mode:'toggle'},COLORS.nav);a[14]=key('BULK\nUNASSIGN',{type:'outputBulkStart',mode:'unassign'},COLORS.nav);}
   if(s.bulk){
    a[12]=key(s.bulk.length+' SELECTED',null,COLORS.info,{kind:'heading'});
@@ -209,6 +212,11 @@ function layout(s){
   }
  }
 
+ if(s.view==='list'&&s.section==='ENCODERS'&&s.encoderBulk){
+  const bulk=s.encoderBulk;a[12]=key(bulk.items.length+' SELECTED',null,COLORS.info,{kind:'heading'});
+  a[13]=key('CANCEL',{type:'encoderBulkCancel'},COLORS.nav);a[14]=key('CONFIRM\n'+bulk.items.length+' ENCODERS',{type:'encoderBulkRun'},COLORS.nav,{disabled:!bulk.items.length});a[15]=key('TOGGLE\nON / OFF',null,COLORS.info,{kind:'heading'});
+  for(let n=16;n<32;n++){const k=a[n],c=k.command;if(c?.type!=='encoder'){if(c)a[n]=key('',null,'#000000',{blank:true});continue;}const e=s.encoders.find(e=>e.id===c.id),selected=bulk.items.some(x=>x.id===c.id);k.command={type:'encoderBulkSelect',id:c.id};k.active=selected;if(selected)k.color=COLORS.nav;k.title='ENC '+e.id+'\n'+e.name+'\n'+(e.enabled?'ON → OFF':'OFF → ON');}
+ }
  if(s.view==='list'&&s.section==='INPUT'&&s.inputBulk){
   const bulk=s.inputBulk;a[12]=key(bulk.items.length+' SELECTED',null,COLORS.info,{kind:'heading'});
   a[13]=key('CANCEL',{type:'inputBulkCancel'},COLORS.nav);a[14]=key('CONFIRM\n'+bulk.items.length+' INPUTS',{type:'inputBulkRun'},COLORS.nav,{disabled:!bulk.items.length});a[15]=key('TOGGLE\nON / OFF',null,COLORS.info,{kind:'heading'});

@@ -11,7 +11,7 @@ test('hub details opens from ONLINE, paginates real data, opens only the web ori
  e.s.online=false;await e.execute(e.keys()[7].command);assert.equal(e.s.view,'hub');assert.equal(e.keys()[14].disabled,false);assert.equal(e.keys()[7].kind,'status');
 });
 test('hub system values expire and unknown metrics are not fabricated',()=>{
- const s={online:true,hub:{system:{cpuPercent:0,memPercent:50,time:Date.now(),storageLevel:25,storageCapacity:1024,storageTime:Date.now()}}};let rows=entries(s,'SYSTEM');assert.ok(rows.some(r=>r.label==='CPU USED (%)'&&r.value==='0'));assert.ok(rows.some(r=>r.label==='STORAGE (%)'&&r.value==='25'));
+ const s={online:true,hub:{system:{cpuPercent:0,memPercent:50,time:Date.now(),storageLevel:25,storageCapacity:1024,storageTime:Date.now()}}};let rows=entries(s,'SYSTEM');assert.ok(rows.some(r=>r.label==='CPU USED (%)'&&r.value==='0'));assert.ok(rows.some(r=>r.label==='DISK USED (%)'&&r.value==='25'));
  s.hub.system.time-=16000;s.hub.system.storageTime-=16000;assert.equal(entries(s,'SYSTEM')[0].value,'No current system metrics reported');
  assert.equal(webOrigin({base:'https://example.test:8896'}),'https://example.test');assert.throws(()=>webOrigin({base:'http://example.test:8893'},'http://user:password@example.test'),/Invalid/);
 });
@@ -37,3 +37,5 @@ test('web GUI protocol is independent from previews and Multiview has a monitor 
 test('Multiview title aligns with adjacent bulk labels and monitor icon sits underneath',async()=>{
  const e=new Engine(createClient);await e.configure({demo:true});const keys=e.keys(),{svg}=require(root+'render'),monitor=svg(keys[13]),bulk=svg(keys[14]);assert.equal(keys[13].iconPosition,'bottom');assert.match(monitor,/translate\(72 107\)/);assert.equal(monitor.match(/<text x="72" y="([^"]+)"/)[1],bulk.match(/<text x="72" y="([^"]+)"/)[1]);
 });
+
+test('system distinguishes MiB-based RAM capacity and disk used/total',()=>{const s={online:true,hub:{system:{memTotal:8192,memPercent:12,time:Date.now(),storageCapacity:102400,storageLevel:25,storageTime:Date.now()}}};const rows=entries(s,'SYSTEM');assert.ok(rows.some(r=>r.label==='RAM TOTAL'&&r.value==='8.00 GiB'));assert.ok(rows.some(r=>r.label==='DISK TOTAL'&&r.value==='100.00 GiB'));assert.ok(rows.some(r=>r.label==='DISK USED'&&r.value==='25.00 GiB'));assert.ok(!rows.some(r=>/BYTES/.test(r.label)));});

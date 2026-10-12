@@ -1,10 +1,12 @@
 'use strict';
 const {safe}=require('./channel-details');
+const size=mib=>mib>=1024?(mib/1024).toFixed(2)+' GiB':mib+' MiB';
 function entries(s,tab){
  const n=s.hub||{},meta=n.metadata||{},out=[];const add=(label,value)=>{const v=safe(value);if(v!==null)out.push({label,value:v});};
  if(tab==='SYSTEM'){
-  const system=n.system||{},fresh=Date.now()-(system.time||0)<15000;if(s.online&&fresh){for(const [field,label]of [['cpuPercent','CPU USED (%)'],['memPercent','MEMORY (%)'],['memTotal','MEMORY BYTES']])if(Number.isFinite(system[field]))add(label,system[field]);}
-  const storageFresh=Date.now()-(system.storageTime||0)<15000;if(s.online&&storageFresh){if(Number.isFinite(system.storageLevel))add('STORAGE (%)',system.storageLevel);if(Number.isFinite(system.storageCapacity))add('STORAGE BYTES',system.storageCapacity);}
+  const system=n.system||{},fresh=Date.now()-(system.time||0)<15000;if(s.online&&fresh){for(const [field,label]of [['cpuPercent','CPU USED (%)'],['memPercent','RAM USED (%)']])if(Number.isFinite(system[field]))add(label,system[field]);}
+  if(s.online&&fresh&&Number.isFinite(system.memTotal))add('RAM TOTAL',size(system.memTotal));
+  const storageFresh=Date.now()-(system.storageTime||0)<15000;if(s.online&&storageFresh){if(Number.isFinite(system.storageLevel))add('DISK USED (%)',system.storageLevel);if(Number.isFinite(system.storageCapacity)){add('DISK TOTAL',size(system.storageCapacity));if(Number.isFinite(system.storageLevel))add('DISK USED',size(system.storageCapacity*system.storageLevel/100));};}
   if(!out.length)add('SYSTEM','No current system metrics reported');
  }else if(tab==='LICENSES'){
   out.push(...require('./licenses').rows(n.license||{},meta));

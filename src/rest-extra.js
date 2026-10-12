@@ -25,7 +25,7 @@ class Extra {
   const rows=await this.snapshot();if(!rows.some(e=>e.id===Number(id)))throw Error('Encoder is outside the StreamHub licensed capacity');return this.enc[id];
  }
  async set(root,id,field,value){
-  const allowed=root==='enc'&&['enable','inputIndex','encoderProfileId'].includes(field)||root==='channelProfile'&&field==='videoIFBEncoderIdx'||root==='streamingOutput'&&['encoderIndex','enable'].includes(field);
+  const allowed=root==='enc'&&['enable','inputIndex','encoderProfileId'].includes(field)||root==='channelProfile'&&field==='videoIFBEncoderIdx'||['streamingOutput','basebandPlayer','NDIOutput'].includes(root)&&['encoderIndex','channelIndex','enable'].includes(field);
   if(!allowed||!/^\d+$/.test(String(id)))throw Error('Encoder field is not allowed');
   if(root==='enc'&&(Number(id)<1||Number(id)>this.limit(await this.request('/'))))throw Error('Encoder is outside the StreamHub licensed capacity');
   const c=await this.config(root);if(!c[id]||!(field in c[id]))throw Error('Field is not exposed by this server');
@@ -33,12 +33,13 @@ class Extra {
   for(let n=0;n<4;n++){const next=await this.config(root);if(typeof value==='boolean'?truth(next[id]?.[field])===value:Number(next[id]?.[field])===value)return;await new Promise(r=>setTimeout(r,200));}
   throw Error('StreamHub did not confirm the encoder command');
  }
+ async outputEncoder(output,id){await this.slot(id);const row=(await this.config(output.root))[output.configIndex];if(!row||!('encoderIndex'in row))throw Error('Output encoder assignment unavailable');await this.set(output.root,output.configIndex,'channelIndex',-1);await this.set(output.root,output.configIndex,'encoderIndex',id-1);}
  async power(id,enabled){const r=await this.slot(id);if(enabled&&!this.profiles[r.encoderProfileId])throw Error('Encoder profile is not assigned');await this.set('enc',id,'enable',enabled);}
  async input(id,input,source){
   const r=await this.slot(id),profile=this.profiles[r.encoderProfileId];
   if(!profile||!source)throw Error('Encoder or source unavailable');
   if(source.type==='WEBRTC')throw Error('LiveGuest requires server license verification');
-  if(source.type==='NDI'&&(profile.encoderVideoType==='Passthrough'||profile.encoderAudioType==='Passthrough'))throw Error('NDI requires an encoding profile');
+  if(['NDI','MULTIVIEW'].includes(source.type)&&(profile.encoderVideoType==='Passthrough'||profile.encoderAudioType==='Passthrough'))throw Error('NDI requires an encoding profile');
   await this.set('enc',id,'inputIndex',input-1);
  }
  async profile(id,profile,{add=false}={}){

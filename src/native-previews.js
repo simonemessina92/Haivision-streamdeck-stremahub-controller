@@ -7,9 +7,9 @@ function thumbnail(raw){
 }
 class NativePreviews{
  constructor({onFrame=()=>{},onStatus=()=>{},onToken=()=>{},onVerified=()=>{},onAuthFailure=()=>{},onDevices=()=>{},fetchFn=globalThis.fetch,WebSocketClass=globalThis.WebSocket}={}){
-  Object.assign(this,{onFrame,onStatus,onToken,onVerified,onAuthFailure,onDevices,fetch:fetchFn,WS:WebSocketClass});this.pendingRemote=null;this.role=null;this.system={};this.liveProfileRows=new Map();this.pendingLiveProfile=null;this.details=new (require('./channel-details').LiveDetails)();this.frames=new Map();this.channels=[];this.network={localIps:[],publicIp:null,hostname:null};this.metadata={};this.config=null;this.license=null;this.devices=new Map();this.pendingRecord=null;this.selectedInput=null;this.subscribed=null;this.selectedInputs=null;this.subscribedInputs=new Set();this.generation=0;this.ws=null;this.timer=null;this.status='Preview login required';this.origin=null;
+  Object.assign(this,{onFrame,onStatus,onToken,onVerified,onAuthFailure,onDevices,fetch:fetchFn,WS:WebSocketClass});this.subscriptionPaused=false;this.pendingRemote=null;this.role=null;this.system={};this.liveProfileRows=new Map();this.pendingLiveProfile=null;this.details=new (require('./channel-details').LiveDetails)();this.frames=new Map();this.channels=[];this.network={localIps:[],publicIp:null,hostname:null};this.metadata={};this.config=null;this.license=null;this.devices=new Map();this.pendingRecord=null;this.selectedInput=null;this.subscribed=null;this.selectedInputs=null;this.subscribedInputs=new Set();this.generation=0;this.ws=null;this.timer=null;this.status='Preview login required';this.origin=null;
  }
- stop(){this.previewSettings=null;this.previewConnection=null;this.reusedPreviewSession=false;this.wasPreviewVerified=false;this.finishRemote(Error('StreamHub connection closed before remote access confirmation'));this.role=null;this.system={};this.liveProfileRows.clear();this.details.clear();this.finishRecord(Error('Device connection closed before confirmation'));this.channels=[];this.network={localIps:[],publicIp:null,hostname:null};this.metadata={};this.config=null;this.license=null;this.devices.clear();this.subscribed=null;this.selectedInput=null;this.selectedInputs=null;this.subscribedInputs.clear();this.generation++;this.token=null;this.origin=null;this.expected=null;clearTimeout(this.timer);this.timer=null;this.verified=false;this.frames.clear();if(this.ws){const ws=this.ws;this.ws=null;ws.close();}}
+ stop(){if(this.verified&&this.ws?.readyState===1){for(const id of this.subscribedInputs)try{this.ws.send('42'+JSON.stringify(['channelClose',4000+10*id]));}catch{}}this.previewSettings=null;this.previewConnection=null;this.reusedPreviewSession=false;this.wasPreviewVerified=false;this.finishRemote(Error('StreamHub connection closed before remote access confirmation'));this.role=null;this.system={};this.liveProfileRows.clear();this.details.clear();this.finishRecord(Error('Device connection closed before confirmation'));this.channels=[];this.network={localIps:[],publicIp:null,hostname:null};this.metadata={};this.config=null;this.license=null;this.devices.clear();this.subscribed=null;this.selectedInput=null;this.selectedInputs=null;this.subscribedInputs.clear();this.generation++;this.token=null;this.origin=null;this.expected=null;clearTimeout(this.timer);this.timer=null;this.verified=false;this.frames.clear();if(this.ws){const ws=this.ws;this.ws=null;ws.close();}}
  setStatus(status){this.status=status;this.onStatus(status);}
  async start(connection,identity,settings={}){
   this.stop();if(!connection||!identity?.hardwareIdentifier)return;
@@ -58,18 +58,19 @@ class NativePreviews{
     for(const frame of pending.values())this.store(frame);pending.clear();this.onDevices();this.subscribe();return;
    }
    if(name==='user_role'){this.role=['admin','user','viewer'].includes(String(value?.role).toLowerCase())?String(value.role).toUpperCase():null;if(this.verified)this.onDevices();return;}
-   if(name==='getMonitorInfo'&&this.verified){const fields={};for(const field of ['cpuPercent','memPercent','memTotal'])if(Number.isFinite(value?.[field]))fields[field]=value[field];this.system={...this.system,...fields,time:Date.now()};this.onDevices();return;}
+   if(name==='getMonitorInfo'&&this.verified){const fields={};for(const field of ['cpuPercent','memPercent','memTotal','storageLevel','storageCapacity']){const raw=value?.[field];if(raw!==null&&raw!==undefined&&raw!==''&&Number.isFinite(Number(raw)))fields[field]=Number(raw);}this.system={...this.system,...fields,time:Date.now(),...(('storageLevel'in fields||'storageCapacity'in fields)?{storageTime:Date.now()}:{})};this.onDevices();return;}
    if(name==='remoteControlOpen'){if(this.verified&&this.pendingRemote){const p=this.pendingRemote;try{const channel=this.terminal(p.id,p.uid);if(channel.instanceId!==p.instance)throw Error('Transmitter identity changed before remote access confirmation');this.finishRemote(null,require('./remote-access').validateResponse(value,p.plan));}catch(error){this.finishRemote(error);}}return;}
    if(name==='ip_local'&&Array.isArray(value)){this.network.localIps=value.filter(x=>typeof x==='string').slice(0,16);return;}
    if(name==='ip_public'&&typeof value==='string'){this.network.publicIp=value;return;}
    if(name==='getConfig'){try{const config=typeof value?.config==='string'?JSON.parse(value.config):value?.config;if(config&&typeof config==='object'){this.config=config;if(typeof config.hostname==='string')this.network.hostname=config.hostname;}}catch{}if(this.verified)this.onDevices();return;}
    if(name==='getLicense'){this.license=require('./licenses').normalize(value);if(this.verified)this.onDevices();return;}
+   if(name==='getChannelStatus'&&this.verified){const storage={};for(const field of ['storageCapacity','storageLevel']){const raw=value?.[field]??value?.data?.[field];if(raw!==null&&raw!==undefined&&raw!==''&&Number.isFinite(Number(raw)))storage[field]=Number(raw);}if(Object.keys(storage).length)this.system={...this.system,...storage,storageTime:Date.now()};}
    if(name==='getChannelStatus'&&Array.isArray(value?.channel)){
     const next=value.channel.slice(0,32);
     for(let n=0;n<next.length;n++)if(this.channels[n]&&(this.channels[n].hardwareIdentifier!==next[n].hardwareIdentifier||this.channels[n].instanceId!==next[n].instanceId)){
-     if(this.pendingRemote?.id===n+1)this.finishRemote(Error('Transmitter identity changed before remote access confirmation'));this.liveProfileRows.delete(n+1);this.subscribedInputs.delete(n+1);this.devices.delete(n+1);if(this.pendingRecord?.id===n+1)this.finishRecord(Error('Device identity changed before recording confirmation'));
+     if(this.pendingRemote?.id===n+1)this.finishRemote(Error('Transmitter identity changed before remote access confirmation'));this.liveProfileRows.delete(n+1);if(this.subscribedInputs.has(n+1)){this.ws.send('42'+JSON.stringify(['channelClose',4000+10*(n+1)]));this.subscribedInputs.delete(n+1);}this.devices.delete(n+1);if(this.pendingRecord?.id===n+1)this.finishRecord(Error('Device identity changed before recording confirmation'));
     }
-    this.channels=next;if(this.verified){const storage={};for(const field of ['storageCapacity','storageLevel'])if(Number.isFinite(value[field]))storage[field]=value[field];if(Object.keys(storage).length)this.system={...this.system,...storage,storageTime:Date.now()};this.onDevices();this.subscribe();}return;
+    this.channels=next;if(this.verified){const storage={};for(const field of ['storageCapacity','storageLevel'])if(value[field]!==null&&value[field]!==undefined&&value[field]!==''&&Number.isFinite(Number(value[field])))storage[field]=Number(value[field]);if(Object.keys(storage).length)this.system={...this.system,...storage,storageTime:Date.now()};this.onDevices();this.subscribe();}return;
    }
    if(name==='getStatusDevicesChange'&&Array.isArray(value?.device)){
     for(const device of value.device){
@@ -205,11 +206,12 @@ class NativePreviews{
   if(generation!==this.generation)throw Error('StreamHub connection changed');this.terminal(id,uid);
   await this.setConfigRows('channelProfile',[id],patch,extra);
  }
+ setActive(active){this.subscriptionPaused=!active;this.subscribe();}
  selectInput(id){this.selectedInputs=null;this.selectedInput=id;this.subscribe();}
  selectInputs(ids){this.selectedInput=null;this.selectedInputs=[...new Set(ids.filter(id=>Number.isInteger(id)&&id>=1&&id<=32))];this.subscribe();}
  subscribe(){
   if(!this.verified||this.ws?.readyState!==1)return;
-  const desired=new Set((this.selectedInputs||[this.selectedInput]).filter(id=>id&&this.channels[id-1]));
+  const desired=new Set(this.subscriptionPaused?[]:(this.selectedInputs||[this.selectedInput]).filter(id=>{const channel=this.channels[id-1];return id&&channel&&(Number(channel.connectionStatus)===1||Number(channel.channelStatus)===2);}));
   for(const id of this.subscribedInputs)if(!desired.has(id)){this.ws.send('42'+JSON.stringify(['channelClose',4000+10*id]));this.subscribedInputs.delete(id);}
   for(const id of desired)if(!this.subscribedInputs.has(id)){this.ws.send('42'+JSON.stringify(['channelInit',id,4000+10*id,this.channels[id-1].product]));this.subscribedInputs.add(id);}
   this.subscribed=this.selectedInputs?null:this.selectedInput&&desired.has(this.selectedInput)?this.selectedInput:null;
@@ -258,7 +260,7 @@ class NativePreviews{
   if(groups.has('streamingOutput')){
    if(!Number.isInteger(encoder)||encoder<1)throw Error('Choose an encoder before routing Multiview to IP');
    const slot=await extra.slot(encoder),profile=extra.profiles[slot.encoderProfileId],codec=String(profile?.encoderVideoType||'').replace(/[^a-z0-9]/gi,'');
-   if(!/^(H264|H265|HEVC)$/i.test(codec))throw Error('Multiview requires an H.264 or HEVC encoder profile');
+   if(!profile||/passthrough/i.test(codec)||/passthrough/i.test(String(profile.encoderAudioType||'')))throw Error('Multiview requires an encoding profile, not passthrough');
    if([true,1,'1'].includes(slot.enable)&&Number(slot.inputIndex)!==32)throw Error('Stop this encoder before assigning Multiview');
   }
   const plans=[];
@@ -285,7 +287,7 @@ class NativePreviews{
   throw Error('StreamHub did not confirm the Multiview change');
  }
  async setConfigRows(root,indices,patch,extra){
- const fields={enc:['enable','inputIndex','encoderProfileId'],inputProtocol:['channelProfileId'],channelProfile:['videoIFBEncoderIdx','videoIFBSourceIdx'],basebandPlayer:['channelIndex','enable'],NDIOutput:['channelIndex','enable'],streamingOutput:['channelIndex','encoderIndex','enable']};
+ const fields={enc:['enable','inputIndex','encoderProfileId'],inputProtocol:['channelProfileId'],channelProfile:['videoIFBEncoderIdx','videoIFBSourceIdx'],basebandPlayer:['channelIndex','encoderIndex','enable'],NDIOutput:['channelIndex','encoderIndex','enable'],streamingOutput:['channelIndex','encoderIndex','enable']};
  if(!fields[root]||Object.keys(patch).some(k=>!fields[root].includes(k))||indices.some(id=>!/^\d+$/.test(String(id))))throw Error('Configuration command is not allowed');
  if(!this.verified||this.ws?.readyState!==1)throw Error('StreamHub web connection unavailable');
  const generation=this.generation,config=await extra.config(root),next=structuredClone(config);

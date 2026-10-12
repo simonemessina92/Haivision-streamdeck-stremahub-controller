@@ -20,7 +20,7 @@ for(const [name,size] of [['plugin',256],['plugin@2x',512],['category',28],['cat
 for(const name of ['plugin','plugin@2x','category','category@2x','action','action@2x'])fs.copyFileSync(path.join(root,'src/images',name+'.png'),path.join(out,'images',name+'.png'));
 const manifest={
  Author:'StreamHub Controller Project',Name:'Haivision StreamHub Controller',Description:'Independent controller for Haivision StreamHub on Stream Deck XL and Stream Deck Mobile with a 32-key 8 x 4 layout. Control inputs, outputs, encoders and Mojo Pro devices, monitor previews, route sources and switch saved StreamHubs from one complete 32-key panel.',
- Version:'0.16.0.9',SDKVersion:2,CodePath:'bin/plugin.js',Nodejs:{Version:'24'},
+ Version:'0.17.0.5',SDKVersion:2,CodePath:'bin/plugin.js',Nodejs:{Version:'24'},
  Software:{MinimumVersion:'7.1'},OS:[{Platform:'windows',MinimumVersion:'10'}],
  Icon:'images/plugin',Category:'Haivision StreamHub Controller',CategoryIcon:'images/category',UUID:'org.streamhub.controller',
  Actions:[{UUID:'org.streamhub.controller.surface',Name:'StreamHub XL surface',VisibleInActionsList:false,Icon:'images/action',Controllers:['Keypad'],PropertyInspectorPath:'inspector.html',

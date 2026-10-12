@@ -16,7 +16,8 @@ function persist(){
  send('setGlobalSettings',uuid,{connections,removedConnections:settings.removedConnections||{}});
 }
 function hubIds(device){return Object.keys(settings.connections).filter(id=>resolveId(id)===id);}
-function selectHub(device,id){id=resolveId(id);if(!settings.connections[id])return;const context=anchors.get(device),c=contexts.get(context);launches.delete(device);hold.stopAll();active.set(device,id);suspended.set(device,id);if(c)bind(c,context,id);else{engine(device,id);render(device);report();}}
+function syncHubSubscriptions(device){const id=active.get(device);for(const e of engines.values())if(e.device===device)e.native?.setActive?.(e.connectionId===id);}
+function selectHub(device,id){id=resolveId(id);if(!settings.connections[id])return;const context=anchors.get(device),c=contexts.get(context);launches.delete(device);hold.stopAll();active.set(device,id);suspended.set(device,id);if(c)bind(c,context,id);else{engine(device,id);syncHubSubscriptions(device);render(device);report();}}
 function addHub(device){const id=randomUUID();settings.connections[id]={name:'StreamHub '+(Object.keys(settings.connections).length+1)};persist();selectHub(device,id);report({newConnection:true,status:'Select ONLINE / OFFLINE in the Stream Deck app and enter the new StreamHub details.'});}
 
 function rowConnection(c){return c?.launcher?resolveId(c.settings.connectionId||'default'):(active.get(c?.device)||'default');}
@@ -47,7 +48,7 @@ const hold=new Hold({onError:error=>failure(error)});
 function bind(c,context,id){
  if(!allowed(c))throw Error('Select ONLINE / OFFLINE or a StreamHub XL access key');id=resolveId(id);saved(id);
  c.settings={...c.settings,connectionId:id};if(c.launcher||!launches.get(c.device))send('setSettings',context,c.settings);else launches.get(c.device).id=id;
- if(!c.launcher){active.set(c.device,id);suspended.set(c.device,id);hold.stopAll();}engine(c.device,id);render(c.device);report();
+ if(!c.launcher){active.set(c.device,id);suspended.set(c.device,id);hold.stopAll();}engine(c.device,id);syncHubSubscriptions(c.device);render(c.device);report();
 }
 async function configure(next,requestId,connectionId,bindInspector=true){
  const c=bindInspector?contexts.get(inspector?.context):null;let id=connectionId||rowConnection(c);if(id==='new')id=randomUUID();
@@ -60,7 +61,7 @@ async function configure(next,requestId,connectionId,bindInspector=true){
  for(const [key,e]of engines)if(e.connectionId===id){e.dispose();engines.delete(key);}
 
  for(const field of accessFields)delete cfg[field];Object.assign(cfg,prepared.config);ready=true;persist();
- const current=[...devices].map(device=>engine(device,id,false));report();
+ const current=[...devices].map(device=>engine(device,id,false));for(const device of devices)syncHubSubscriptions(device);report();
  try{await Promise.all(current.map(e=>e.configure({...cfg,previewSessionCandidate:prepared.candidate})));if(operations.get(id)===op&&current.length&&current.every(e=>e.s.online&&!e.disposed)){cfg.configurationLocked=true;persist();}}
  catch(error){if(operations.get(id)===op){for(const e of current)if(!e.disposed)e.s.error=error.message;failure(error,undefined,id);}}
  finally{if(operations.get(id)===op){delete cfg.previewPassword;op.busy=false;report({configurationSaved:!!(bindInspector&&requestId)});op.requestId=null;}}
@@ -77,7 +78,7 @@ async function deleteHub(requestId){
  for(const [device,current]of suspended)if(current===id)suspended.set(device,fallback);
  for(const launch of launches.values())if(launch.id===id)launch.id=fallback;
  for(const [context,row]of contexts)if(row.settings.connectionId===id){row.settings={...row.settings,connectionId:fallback};send('setSettings',context,row.settings);}
- persist();for(const device of active.keys()){engine(device);render(device);}
+ persist();for(const device of active.keys()){engine(device);syncHubSubscriptions(device);render(device);}
  report({phase:'complete',requestId,connectionDeleted:true,status:'StreamHub deleted',error:''});
 }
 async function reconnect(id){
@@ -122,7 +123,7 @@ function recoverSurfaceAnchor(device){
 }
 function resumeDevice(device){
  offlineDevices.delete(device);const anchor=contexts.get(anchors.get(device));if(anchor)active.set(device,anchor.settings.connectionId||suspended.get(device)||'default');
- if(active.has(device))engine(device);for(const row of contexts.values())if(row.device===device){row.sig=null;row.titleCleared=false;}render(device);report();
+ if(active.has(device))engine(device);syncHubSubscriptions(device);for(const row of contexts.values())if(row.device===device){row.sig=null;row.titleCleared=false;}render(device);report();
 }
 
 async function onMessage(message){
@@ -137,9 +138,9 @@ async function onMessage(message){
   const c={device:m.device,slot,launcher,settings:{...(m.payload.settings||{})},sig:null};contexts.set(m.context,c);
   if(!launcher&&slot===7){anchors.set(m.device,m.context);if(c.settings.surfacePages>1)launches.delete(m.device);const pending=launches.get(m.device);const id=resolveId(pending?.pending?pending.id:c.settings.connectionId||suspended.get(m.device)||'default');active.set(m.device,id);if(pending?.pending){pending.pending=false;c.settings.connectionId=id;send('setSettings',m.context,c.settings);}if(c.settings.pageName&&!saved(id).name)saved(id).name=c.settings.pageName;engine(m.device,id);}
   else if(launcher)engine(m.device,rowConnection(c));
-  recoverSurfaceAnchor(m.device);offlineDevices.delete(m.device);render(m.device);report();return;
+  recoverSurfaceAnchor(m.device);syncHubSubscriptions(m.device);offlineDevices.delete(m.device);render(m.device);report();return;
  }
- if(m.event==='didReceiveSettings'){const c=contexts.get(m.context)||restoreInspectorContext(m);if(c){const incoming={...(m.payload.settings||{})};if(!c.launcher&&c.slot===7&&active.has(c.device))incoming.connectionId=active.get(c.device);c.settings=incoming;if(!c.launcher&&c.slot===7){const launch=launches.get(c.device);if(launch)c.settings.connectionId=launch.id;active.set(c.device,resolveId(c.settings.connectionId||'default'));}recoverSurfaceAnchor(c.device);engine(c.device,rowConnection(c));render(c.device);report();}return;}
+ if(m.event==='didReceiveSettings'){const c=contexts.get(m.context)||restoreInspectorContext(m);if(c){const incoming={...(m.payload.settings||{})};if(!c.launcher&&c.slot===7&&active.has(c.device))incoming.connectionId=active.get(c.device);c.settings=incoming;if(!c.launcher&&c.slot===7){const launch=launches.get(c.device);if(launch)c.settings.connectionId=launch.id;active.set(c.device,resolveId(c.settings.connectionId||'default'));}recoverSurfaceAnchor(c.device);engine(c.device,rowConnection(c));syncHubSubscriptions(c.device);render(c.device);report();}return;}
  if(m.event==='willDisappear'){hold.stop(m.context);const c=contexts.get(m.context);contexts.delete(m.context);if(c&&!c.launcher&&c.slot===7&&anchors.get(c.device)===m.context){anchors.delete(c.device);suspended.set(c.device,active.get(c.device));for(const e of engines.values())if(e.device===c.device)e.revision++;}return;}
  if(m.event==='deviceDidDisconnect'){
   offlineDevices.add(m.device);if(active.has(m.device))suspended.set(m.device,active.get(m.device));

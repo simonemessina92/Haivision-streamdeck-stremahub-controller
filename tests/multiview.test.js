@@ -51,7 +51,7 @@ test('Multiview previews are LIVE-only and Basic hides label overlays',async()=>
 });
 test('Multiview IP routing requires an encoder and assignment does not enable any device',async()=>{
  const e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'multiview'});await e.execute(e.keys()[28].command);assert.equal(e.s.picker.kind,'multiviewRoute');
- await e.execute({type:'multiviewRouteGroup',group:'IP'});assert.equal(e.keys()[16].title,'SELECT\nENCODER');await e.execute(e.keys()[16].command);const encoder=e.s.picker.items.find(i=>i.command.encoder===2);assert.equal(encoder.disabled,false);assert.equal(e.s.picker.items.find(i=>i.command.encoder===1).disabled,true);await e.execute({type:'choose',item:encoder});assert.equal(e.s.picker.encoder,2);
+ await e.execute({type:'multiviewRouteGroup',group:'IP'});assert.equal(e.keys()[12].title,'SELECT\nENCODER');await e.execute(e.keys()[12].command);const encoder=e.s.picker.items.find(i=>i.command.encoder===2);assert.equal(encoder.disabled,false);assert.equal(e.s.picker.items.find(i=>i.command.encoder===1).disabled,true);await e.execute({type:'choose',item:encoder});assert.equal(e.s.picker.encoder,2);
  const output=e.s.data.outputs.find(o=>o.type==='IP');await e.execute({type:'choose',item:{command:{type:'multiviewRouteSelect',key:output.key}}});await e.execute({type:'multiviewRouteConfirm'});await e.execute({type:'multiviewRouteApply',goLive:false});assert.equal(e.s.view,'multiview');assert.equal(output.encoder,2);assert.equal(output.source,null);assert.equal(output.enabled,false);assert.equal(e.s.encoders[1].input,33);assert.equal(e.s.encoders[1].enabled,false);assert.equal(e.s.multiview.enabled,false);
  await e.execute(e.keys()[28].command);await e.execute({type:'multiviewRouteGroup',group:'NDI'});const ndi=e.s.data.outputs.find(o=>o.type==='NDI');await e.execute({type:'choose',item:{command:{type:'multiviewRouteSelect',key:ndi.key}}});await e.execute({type:'multiviewRouteApply',goLive:true});assert.equal(ndi.source,33);assert.equal(ndi.enabled,true);assert.equal(e.s.multiview.enabled,true);
 });
@@ -61,11 +61,11 @@ test('native Multiview routing uses input 33 directly for physical outputs and a
  const extra={profiles:{'0':{encoderVideoType:'H264'}},slot:async()=>structuredClone(roots.enc['1']),config:async root=>structuredClone(roots[root])};const outputs=[{key:'SDI:1',root:'basebandPlayer',configIndex:1,name:'SDI'},{key:'IP:5',root:'streamingOutput',configIndex:5,name:'IP'}];
  await assert.rejects(p.routeMultiview(outputs,null,extra),/Choose an encoder/);assert.equal(sent.length,0);
  await p.routeMultiview(outputs,1,extra,keys=>confirmed.push(...keys));assert.equal(roots.basebandPlayer['1'].channelIndex,32);assert.equal(roots.streamingOutput['5'].channelIndex,-1);assert.equal(roots.streamingOutput['5'].encoderIndex,0);assert.equal(roots.enc['1'].inputIndex,32);assert.equal(roots.enc['1'].enable,false);assert.equal(roots.basebandPlayer['1'].enable,false);assert.equal(roots.streamingOutput['5'].enable,false);assert.equal(roots.basebandPlayer['1'].other,'KEEP');assert.deepEqual(confirmed,['SDI:1','IP:5']);
- extra.profiles['0'].encoderVideoType='Passthrough';const count=sent.length;await assert.rejects(p.routeMultiview(outputs,1,extra),/H.264 or HEVC/);assert.equal(sent.length,count);
+ extra.profiles['0'].encoderVideoType='Passthrough';const count=sent.length;await assert.rejects(p.routeMultiview(outputs,1,extra),/passthrough/);assert.equal(sent.length,count);
  extra.profiles['0'].encoderVideoType='HEVC';roots.enc['1'].enable=true;roots.enc['1'].inputIndex=0;await assert.rejects(p.routeMultiview(outputs,1,extra),/Stop this encoder/);assert.equal(sent.length,count);
 });
 test('multiple Multiview preview subscriptions are deduplicated and closed when deselected',()=>{
- const p=new NativePreviews();p.verified=true;p.channels=[{product:'SST'},{product:'MoJo'},{product:'SST'}];const sent=[];p.ws={readyState:1,send:raw=>sent.push(JSON.parse(raw.slice(2)))};
+ const p=new NativePreviews();p.verified=true;p.channels=[{product:'SST',connectionStatus:1},{product:'MoJo',connectionStatus:1},{product:'SST',connectionStatus:1}];const sent=[];p.ws={readyState:1,send:raw=>sent.push(JSON.parse(raw.slice(2)))};
  p.selectInputs([1,1,3]);assert.deepEqual(sent.map(e=>e[0]),['channelInit','channelInit']);p.selectInputs([3]);assert.deepEqual(sent.at(-1),['channelClose',4010]);p.selectInput(2);assert.deepEqual(sent.slice(-2).map(e=>e[0]),['channelClose','channelInit']);assert.equal(p.subscribed,2);
 });
 
@@ -73,4 +73,14 @@ test('an IP output using a stopped encoder with another source can be rerouted t
  const e=new Engine(createClient);await e.configure({demo:true});const ip=e.s.data.outputs.find(o=>o.type==='IP');ip.encoder=2;ip.source=null;
  await e.execute({type:'multiview'});await e.execute({type:'pick',kind:'multiviewRoute'});await e.execute({type:'multiviewRouteGroup',group:'IP'});await e.execute({type:'pick',kind:'multiviewEncoder'});await e.execute({type:'choose',item:e.s.picker.items.find(i=>i.command.encoder===2)});
  assert.equal(e.keys()[16].disabled,false);await e.execute(e.keys()[16].command);assert.deepEqual(e.s.picker.selectedKeys,[ip.key]);await e.execute({type:'multiviewRouteApply',goLive:false});assert.equal(e.s.encoders[1].input,33);assert.equal(e.s.encoders[1].enabled,false);assert.equal(ip.enabled,false);
+});
+
+test('encoder picker includes Multiview last in the matching readiness group and permits OFF assignment',async()=>{
+ const e=new Engine(createClient);await e.configure({demo:true});e.s.multiview.enabled=false;await e.openPicker({kind:'encoderInput',encoder:1});const last=e.s.picker.items.at(-1);assert.equal(last.command.input,33);assert.equal(last.ready,false);await e.execute({type:'inputReadiness'});e.s.page=Math.floor((e.s.picker.items.filter(x=>!x.ready).length-1)/16);assert.ok(e.keys().some(k=>k.title.includes('MULTIVIEW')));await e.choose(last);assert.equal(e.s.encoders.find(x=>x.id===1).input,33);assert.equal(e.s.multiview.enabled,false);
+});
+test('Multiview codec selection accepts non-passthrough encoder profiles',async()=>{
+ const e=new Engine(createClient);await e.configure({demo:true});e.s.demo=false;e.s.picker={kind:'multiviewRoute',group:'IP'};e.extra.profiles=Object.fromEntries(e.s.encoders.map(enc=>[enc.profile,{encoderVideoType:'MPEG2'}]));await e.openPicker({kind:'multiviewEncoder'});assert.ok(e.s.picker.items.length);assert.ok(e.s.picker.items.every(item=>!item.title.includes('UNSUPPORTED')));
+});
+test('input to encoder and encoder to output assignment preserve all power states',async()=>{
+ const e=new Engine(createClient);await e.configure({demo:true});const input=e.s.data.inputs[0],enc=e.s.encoders[0],output=e.s.data.outputs[0];const powers=[input.enabled,enc.enabled,output.enabled];await e.openPicker({kind:'inputEncoder',input:input.id,uid:input.uid});await e.choose(e.s.picker.items.find(x=>x.command.encoder===enc.id));assert.equal(enc.input,input.id);await e.openPicker({kind:'encoderRoute',encoder:enc.id});await e.choose(e.s.picker.items.find(x=>x.command.key===output.key));assert.equal(output.encoder,enc.id);assert.deepEqual([input.enabled,enc.enabled,output.enabled],powers);
 });

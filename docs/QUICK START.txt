@@ -1,4 +1,4 @@
-STREAMHUB XL — QUICK START — 0.16.0
+STREAMHUB XL — QUICK START — 0.17.0
 
 INSTALL
 Windows 10+, Stream Deck app 7.1+, Stream Deck XL or Stream Deck Mobile (32 keys, 8 columns x 4 rows).
@@ -42,7 +42,11 @@ Only reported values are shown; these pages do not edit stream profiles.
 LIVE PROFILE on compatible transmitters selects an existing preset without starting LIVE.
 MULTIVIEW builds a 1 x 1 to 4 x 4 grid; PAGE switches between two sets of 16 sources.
 Live inputs show cell previews. BASIC hides information overlays.
-SDI/NDI routing is direct; IP routing needs an H.264/HEVC encoder.
+Multiview SDI/NDI routing is direct; IP routing uses an encoding profile, not passthrough.
+Input ROUTE TO OUTPUT offers ADD TO ENCODER for SDI/IP. NDI remains direct.
+Select outputs, then ASSIGN ONLY or ASSIGN & GO LIVE.
+ENCODERS has BULK ON/OFF with multiselection and confirmation.
+SYSTEM distinguishes RAM and disk, with capacities in MiB/GiB.
 ASSIGN ONLY preserves power state; ASSIGN & GO LIVE enables the required channels.
 Mojo microphone selection remains in the phone app.
 

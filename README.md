@@ -6,7 +6,7 @@ The plugin includes video previews, source routing, recording, intercom, video r
 
 ## Download and install
 
-**[Download v0.16.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.16.0/haivision-streamdeck-streamhub-plugin-v0.16.0.zip)**
+**[Download v0.17.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.17.0/haivision-streamdeck-streamhub-plugin-v0.17.0.zip)**
 
 You need Windows 10 or later, Stream Deck app 7.1 or later, and either a **Stream Deck XL** or **Stream Deck Mobile configured with 32 keys in an 8 x 4 layout**.
 
@@ -47,11 +47,15 @@ REST API access uses HTTP 8893 or HTTPS 8896; web login and previews use HTTP 88
 
 - **STATUS DETAILS** is available on inputs, outputs and encoders. CONFIG shows reported stream parameters, STATS shows available live measurements, and ALERTS shows errors and warnings. These pages are read-only.
 - **LIVE PROFILE** on a compatible connected transmitter selects an existing encoding preset. The current preset is highlighted; changing it does not start the input.
+- **ROUTE TO OUTPUT** on an input offers optional **ADD TO ENCODER**. Choose an encoder, select SDI/IP destinations, then **ASSIGN ONLY** or **ASSIGN & GO LIVE**. NDI stays available on direct routing.
+- **BULK ON/OFF** in ENCODERS toggles selected encoders after confirmation, preserving their sources and profiles.
 - **MULTIVIEW**, beside input bulk controls, builds a 1 x 1 to 4 x 4 grid. Select sources across two pages of 16 inputs. Cell previews appear when their sources are live; BASIC hides the information overlays.
-- Route Multiview directly to SDI or NDI. IP routing requires an H.264 or HEVC encoder. Choose **ASSIGN ONLY** to keep the current power states, or **ASSIGN & GO LIVE** to enable the required channels.
+- Route Multiview directly to SDI or NDI. IP routing requires an assigned encoding profile; passthrough is excluded. Choose **ASSIGN ONLY** to keep the current power states, or **ASSIGN & GO LIVE** to enable the required channels.
 - Mojo Pro provides camera selection, manual/auto controls, fixed shutter steps, zoom reset and 2 dB audio gain steps. Microphone selection stays in the phone app.
 
 Available controls and statistics depend on the StreamHub version, license and connected device. Profile and routing changes wait for server or device confirmation.
+
+SYSTEM shows CPU usage, RAM usage/capacity and disk usage/capacity in MiB/GiB when reported. Device-detail requests stop for disconnected inputs and pause when switching to another saved hub.
 
 ## Saved access details
 
@@ -63,7 +67,7 @@ Do not share your personal settings or backups.
 
 ## Building from source
 
-`main` is the stable branch; `develop` is for ongoing work. Version **0.16.0** is the current stable release, verified with Stream Deck XL and two registered Mobile devices.
+`main` is the stable branch; `develop` is for ongoing work. Version **0.17.0** is the current stable release, verified with Stream Deck XL and two registered Mobile devices.
 
 Install Node.js 24, then run:
 
