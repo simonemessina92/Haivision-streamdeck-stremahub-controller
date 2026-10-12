@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),{createRequire}=require('node:module');
 const root=path.join(__dirname,'../org.streamhub.controller.sdPlugin'),uuid='inspector-session',actionContext='action-instance';
 function page(allowed=true){
- const nodes=Object.fromEntries(['connection','name','address','key','connect','disconnect','connectionPanel','keyNotice','status','previewOrigin','previewUsername','previewPassword','previewStatus'].map(id=>[id,{value:'',checked:false,disabled:true,textContent:'',style:{}}]));
+ const nodes=Object.fromEntries(['connection','name','address','key','connect','disconnect','deleteConnection','confirmation','confirmationText','confirmAction','cancelAction','connectionPanel','keyNotice','status','previewOrigin','previewUsername','previewPassword','previewStatus','webGuiProtocol','webGuiUrl','webGuiCustom'].map(id=>[id,{value:'',checked:false,disabled:true,textContent:'',style:{}}]));
  const timers=new Map();let serial=0;
  const code=fs.readFileSync(root+'/inspector.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
  const outbound=[];
@@ -28,7 +28,7 @@ test('connection confirmation clears Connecting and timeout reports a failure',(
  assert.match(p.nodes.status.textContent,/did not confirm/);assert.equal(p.nodes.connect.disabled,false);
 });
 test('settings has a single connection button and no Open XL layout button',()=>{
- const html=fs.readFileSync(root+'/inspector.html','utf8');assert.equal((html.match(/<button\b/g)||[]).length,2);assert.doesNotMatch(html,/Open XL layout|id="demo"|<summary>Demo/);
+ const html=fs.readFileSync(root+'/inspector.html','utf8');assert.equal((html.match(/<button\b/g)||[]).length,5);assert.doesNotMatch(html,/Open XL layout|id="demo"|<summary>Demo/);
 });
 test('real plugin and settings exchange a complete demo connection through the broker',async()=>{
  const p=page();let socket;
@@ -49,7 +49,7 @@ test('real plugin and settings exchange a complete demo connection through the b
  assert.equal(outgoing.context,uuid);
  deliver({...outgoing,context:actionContext,payload:{...outgoing.payload,settings:{...outgoing.payload.settings,demo:true}}});
  await new Promise(r=>setImmediate(r));
- assert.match(p.nodes.status.textContent,/DEMO/);assert.equal(p.nodes.connect.disabled,false);
+ assert.match(p.nodes.status.textContent,/DEMO/);assert.equal(p.nodes.connect.disabled,true);
 });
 
 test('a new connection replaces an in-progress server session and discards its late token and status',async()=>{
@@ -96,8 +96,8 @@ test('configuration UI is restricted to the connection key and Disconnect clears
  hidden.nodes.address.value='192.0.2.1';hidden.nodes.key.value='test';
  const count=hidden.outbound.length;hidden.nodes.connect.onclick();hidden.nodes.disconnect.onclick();assert.equal(hidden.outbound.length,count);
  const p=page();p.nodes.address.value='192.0.2.2';p.nodes.key.value='test';
- p.nodes.disconnect.onclick();assert.equal(p.outbound.at(-1).payload.type,'disconnect');
- assert.equal(p.nodes.address.value,'');assert.equal(p.nodes.key.value,'');
+ p.nodes.disconnect.onclick();p.nodes.confirmAction.onclick();assert.equal(p.outbound.at(-1).payload.type,'disconnect');
+ assert.equal(p.nodes.address.value,'192.0.2.2');assert.equal(p.nodes.key.value,'test');
 });
 
 
@@ -114,8 +114,31 @@ test('Add StreamHub creates a separate connection and cannot disconnect the prev
 });
 
 test('Disconnect clears all access fields and late global settings cannot refill them',()=>{
- const p=page();for(const field of ['address','key','previewOrigin','previewUsername','previewPassword'])p.nodes[field].value='secret';p.nodes.disconnect.onclick();
+ const p=page();for(const field of ['address','key','previewOrigin','previewUsername','previewPassword'])p.nodes[field].value='secret';p.nodes.disconnect.onclick();p.nodes.confirmAction.onclick();p.socket.onmessage({data:JSON.stringify({event:'sendToPropertyInspector',payload:{phase:'complete',connectionId:'default',connectionSettings:{},credentialsCleared:true,configurationLocked:false}})});
  p.socket.onmessage({data:JSON.stringify({event:'didReceiveGlobalSettings',payload:{settings:{address:'old-server',key:'old-key',previewUsername:'old-user'}}})});
  for(const field of ['address','key','previewOrigin','previewUsername','previewPassword'])assert.equal(p.nodes[field].value,'');
  assert.ok(!p.outbound.some(m=>m.event==='getGlobalSettings'));
+});
+
+test('saved connection changes synchronize the effective web address only after the matching save completes',()=>{
+ const p=page();const receive=payload=>p.socket.onmessage({data:JSON.stringify({event:'sendToPropertyInspector',payload})});
+ receive({phase:'complete',connectionId:'hub',connectionSettings:{name:'Hub',address:'hub.example.test',key:'key',previewOrigin:'https://hub.example.test'},configurationAllowed:true});p.nodes.address.value='192.0.2.15';
+ receive({phase:'complete',connectionId:'hub',connectionSettings:{address:'hub.example.test',previewOrigin:'https://hub.example.test'}});assert.equal(p.nodes.address.value,'192.0.2.15');
+ p.nodes.connect.onclick();const requestId=p.outbound.at(-1).payload.requestId;receive({phase:'complete',requestId,configurationSaved:true,connectionId:'hub',connectionSettings:{name:'Hub',address:'192.0.2.15',key:'key',previewOrigin:'https://192.0.2.15'}});assert.equal(p.nodes.previewOrigin.value,'https://192.0.2.15');assert.equal(p.nodes.address.value,'192.0.2.15');assert.equal(p.nodes.previewPassword.value,'');
+});
+
+test('browser shortcut protocol and custom URL are submitted independently of preview override',()=>{
+ const p=page();p.nodes.address.value='192.0.2.1';p.nodes.key.value='key';p.nodes.previewOrigin.value='http://192.0.2.1:8888';p.nodes.webGuiProtocol.value='custom';p.nodes.webGuiUrl.value='https://web.example.test';p.nodes.webGuiProtocol.onchange();assert.equal(p.nodes.webGuiCustom.style.display,'block');p.nodes.connect.onclick();const cfg=p.outbound.at(-1).payload.settings;assert.equal(cfg.webGuiProtocol,'custom');assert.equal(cfg.webGuiUrl,'https://web.example.test');assert.equal(cfg.previewOrigin,'http://192.0.2.1:8888');
+});
+
+test('preview diagnostics show the active endpoint independently from the saved browser shortcut',()=>{
+ const p=page();p.socket.onmessage({data:JSON.stringify({event:'sendToPropertyInspector',payload:{phase:'complete',previewStatus:'Previews connected',effectivePreviewOrigin:'http://192.0.2.1:8888'}})});assert.match(p.nodes.previewStatus.textContent,/Previews connected/);assert.match(p.nodes.previewStatus.textContent,/Preview endpoint: http:\/\/192.0.2.1:8888/);
+});
+
+test('locked configuration is greyed and cannot submit edits while hub selector remains available',()=>{
+ const p=page();p.socket.onmessage({data:JSON.stringify({event:'sendToPropertyInspector',payload:{configurationAllowed:true,configurationLocked:true,phase:'complete',status:'Connected'}})});assert.equal(p.nodes.address.disabled,true);assert.equal(p.nodes.previewPassword.disabled,true);assert.equal(p.nodes.connect.disabled,true);const count=p.outbound.length;p.nodes.connect.onclick();assert.equal(p.outbound.length,count);assert.equal(p.nodes.disconnect.disabled,false);
+ p.nodes.connection.value='new';p.nodes.connection.onchange();assert.equal(p.nodes.address.disabled,false);
+});
+test('disconnect and delete require confirmation and cancel sends no command',()=>{
+ const p=page();const count=p.outbound.length;p.nodes.disconnect.onclick();assert.equal(p.outbound.length,count);p.nodes.cancelAction.onclick();assert.equal(p.outbound.length,count);p.nodes.deleteConnection.onclick();assert.equal(p.outbound.length,count);p.nodes.confirmAction.onclick();assert.equal(p.outbound.at(-1).payload.type,'deleteConnection');
 });

@@ -1,5 +1,8 @@
 'use strict';
 const CAMERA_ICONS={"WB":"<circle cx=\"0\" cy=\"0\" r=\"8\"/><path d=\"M-14 0H-11M11 0H14M0-14V-11M0 11V14M-10-10L-8-8M8 8L10 10M-10 10L-8 8M8-8L10-10\"/>","ISO":"<path d=\"M0-13L11-6V6L0 13L-11 6V-6Z M-11-6L0-6L6 4L0 13M0-13L6-3L-6 4L-11 6M11-6L6 4L-6 4L0-6\"/>","ShutterSpeed":"<circle r=\"12\"/><path d=\"M0-8V0L6 4\"/>","Zoom":"<circle cx=\"-3\" cy=\"-3\" r=\"9\"/><path d=\"M4 4L13 13M-8-3H2M-3-8V2\"/>","Focus":"<path d=\"M-5-12H-12V-5M5-12H12V-5M-12 5V12H-5M12 5V12H5\"/><circle r=\"4\"/>","AudioGain":"<path d=\"M-13-5H-7L0-12V12L-7 5H-13Z M5-7Q13 0 5 7M9-12Q22 0 9 12\"/>"};
+CAMERA_ICONS.Multiview='<rect x="-17" y="-12" width="34" height="23" rx="2"/><path d="M0-12V11M-17 0H17M0 11V16M-9 16H9"/>';
+CAMERA_ICONS.Remote='<path d="M-12 8H12L15 14H-15Z M0 8V-5"/><circle cx="0" cy="-9" r="5"/><circle cx="8" cy="12" r="1"/>';
+CAMERA_ICONS.Web='<circle r="14"/><ellipse rx="6" ry="14"/><path d="M-14 0H14M-12-7H12M-12 7H12"/>';
 CAMERA_ICONS.Alert='<path d="M0-14L15 12H-15Z M0-5V3M0 7V8"/>';
 CAMERA_ICONS.Link='<path d="M-3-7L1-11A7 7 0 0 1 11-1L7 3M3 7L-1 11A7 7 0 0 1-11 1L-7-3M-5 5L5-5"/>';
 CAMERA_ICONS.Record='<circle r="9" fill="currentColor"/>';
@@ -24,12 +27,12 @@ function svg(key){
  const passive=['heading','value','preview'].includes(key.kind);
  const solid=key.kind==='status'||key.active;
  const fill=key.disabled&&key.kind!=='navigation'?'#161b22':solid?accent:key.color==='#ba9cff'?'#33264d':key.kind==='tab'||key.color==='#4c9dff'?'#15345a':key.color==='#ffa64d'?'#4a3018':key.color==='#ff6969'||key.color==='#ff687f'?'#57212b':key.color==='#78df75'||key.color==='#64df96'?'#183e2a':passive?'#10151c':'#13333b';
- const lines=key.stateLabel?[...wrap(String(key.title).split('\n').slice(0,-1).join('\n')).slice(0,3),key.stateLabel]:wrap(key.title),font=lines.length>3?18:21,gap=key.repeat?38:font+5,top=(key.icon?86:72)-(lines.length-1)*gap/2;
+ const lines=key.stateLabel?[...wrap(String(key.title).split('\n').slice(0,-1).join('\n')).slice(0,3),key.stateLabel]:wrap(key.title),font=lines.length>3?18:21,gap=key.repeat?38:font+5,top=(key.icon&&key.iconPosition!=='bottom'?86:72)-((key.iconPosition==='bottom'?Math.max(2,lines.length):lines.length)-1)*gap/2;
  const text=lines.map((line,n)=>{
   const value=key.kind==='value'&&n===1,size=key.kind==='add'?88:key.repeat&&n===1?44:value?Math.min(32,118/Math.max(1,line.length)/.66):Math.min(font,118/Math.max(1,line.length)/.68);
   return '<text x="72" y="'+(top+n*gap)+'" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="'+size+'" font-weight="700" fill="'+escapeXml(key.disabled&&key.kind!=='navigation'?'#8b949f':solid?'#071018':key.stateLabel&&n===lines.length-1?key.stateColor:n===0?accent:'#ffffff')+'">'+escapeXml(line)+'</text>';
  }).join('');
- const icon=key.icon&&CAMERA_ICONS[key.icon]?'<g transform="translate(72 26)" fill="none" color="'+(solid?'#ffffff':accent)+'" stroke="'+(solid?'#ffffff':accent)+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'+CAMERA_ICONS[key.icon]+'</g>':'';
+ const icon=key.icon&&CAMERA_ICONS[key.icon]?'<g transform="translate(72 '+(key.iconPosition==='bottom'?107:26)+')" fill="none" color="'+(solid?'#ffffff':accent)+'" stroke="'+(solid?'#ffffff':accent)+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'+CAMERA_ICONS[key.icon]+'</g>':'';
  const border='<rect x="4" y="4" width="136" height="136" rx="13" fill="'+fill+'" stroke="'+accent+'" stroke-width="'+(solid?4:passive?1:3)+'"/>';
  return '<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144">'+base+border+icon+text+'</svg>';
 }

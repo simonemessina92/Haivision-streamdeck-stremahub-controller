@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>
-body{background:#242424;color:#eee;font:13px Arial;margin:12px}label{display:block;margin-top:10px}select,input[type=text],input[type=password]{box-sizing:border-box;width:100%;padding:8px;margin-top:4px;background:#151515;border:1px solid #666;color:white;border-radius:5px}button{padding:9px 14px;margin-top:12px;background:#176b7a;color:white;border:0;border-radius:5px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}p{line-height:1.4}#status{padding:9px;background:#181818;white-space:pre-wrap}small{color:#bbb}details{margin-top:12px}summary{cursor:pointer}
+body{background:#242424;color:#eee;font:13px Arial;margin:12px}label{display:block;margin-top:10px}select,input[type=text],input[type=password]{box-sizing:border-box;width:100%;padding:8px;margin-top:4px;background:#151515;border:1px solid #666;color:white;border-radius:5px}button{padding:9px 14px;margin-top:12px;background:#176b7a;color:white;border:0;border-radius:5px;cursor:pointer}input:disabled,select:disabled{color:#999;background:#303030;border-color:#444;cursor:not-allowed}button:disabled{opacity:.5;cursor:wait}p{line-height:1.4}#status{padding:9px;background:#181818;white-space:pre-wrap}small{color:#bbb}details{margin-top:12px}summary{cursor:pointer}
 </style></head><body>
 <p id="keyNotice">Select the ONLINE / OFFLINE key in the top-right corner to manage the StreamHub connection.</p>
 <div id="connectionPanel" style="display:none"><strong>StreamHub connection</strong>
@@ -8,21 +8,29 @@ body{background:#242424;color:#eee;font:13px Arial;margin:12px}label{display:blo
 <label>Saved StreamHub<select id="connection"></select></label>
 <label>StreamHub name<input id="name" type="text" maxlength="48" autocomplete="off"></label>
 <label>StreamHub IP or address<input id="address" type="text" autocomplete="off"></label>
+<small>REST API: HTTP port 8893 or HTTPS port 8896. For HTTPS, enter https:// followed by the server address. Web login and previews use separate ports: HTTP 8888 or HTTPS 443.</small>
 <label>API key<input id="key" type="password" autocomplete="off"></label>
 <label>Username<input id="previewUsername" type="text" autocomplete="off" placeholder="StreamHub web username"></label>
 <label>Password<input id="previewPassword" type="password" autocomplete="off" placeholder="StreamHub web password"></label>
-<small>Web access enables previews and device recording status. Your password is used to sign in and is not saved. Address, API key, username and preview token are stored locally. Disconnect forgets all access details for this unit.</small>
+<small>Web access enables previews and device recording status. Your password is used to sign in and is not saved. Address, API key, username and preview token are stored locally. Disconnect forgets all access details for this unit. Delete StreamHub removes the saved unit.</small>
 <p id="previewStatus" role="status"></p>
+<label>Open web GUI<select id="webGuiProtocol"><option value="https">HTTPS — port 443</option><option value="http">HTTP — port 8888</option><option value="custom">Custom URL</option></select></label>
+<label id="webGuiCustom" style="display:none">Browser URL<input id="webGuiUrl" type="text" autocomplete="off"></label>
+<small>This changes the browser shortcut only. Preview access is configured separately below.</small>
 <details><summary>Advanced</summary>
-<label>Web interface URL<input id="previewOrigin" type="text" placeholder="Automatic: http://your-server:8888"></label>
-</details><button id="connect" disabled>Save and connect</button> <button id="disconnect" disabled>Disconnect</button>
+<label>Preview web interface URL<input id="previewOrigin" type="text" placeholder="Automatic: http://your-server:8888"></label>
+<small>Leave empty to follow the StreamHub address. If an override is unreachable, the plugin also tries the web interface on the configured StreamHub host.</small></details><button id="connect" disabled>Save and connect</button> <button id="disconnect" disabled>Disconnect</button> <button id="deleteConnection" disabled>Delete StreamHub</button>
+<div id="confirmation" style="display:none"><p id="confirmationText"></p><button id="confirmAction">Confirm</button> <button id="cancelAction">Cancel</button></div>
 <p id="status" role="status">Loading settings…</p>
 </div>
 <script>
-let socket,uiContext,actionContext,requestTimer,handshakeTimer,requestId=null,settingsLoaded=false,requestSerial=0,configurationAllowed=false,connectionId=null,actionUUID='org.streamhub.controller.surface';
+let socket,uiContext,actionContext,requestTimer,handshakeTimer,requestId=null,settingsLoaded=false,requestSerial=0,configurationAllowed=false,configurationLocked=false,pendingAction=null,connectionId=null,actionUUID='org.streamhub.controller.surface';
 const $=id=>document.getElementById(id);
+function lockFields(locked){configurationLocked=!!locked;for(const id of ['name','address','key','previewUsername','previewPassword','previewOrigin','webGuiProtocol','webGuiUrl'])$(id).disabled=configurationLocked;$('connect').disabled=configurationLocked||!configurationAllowed||!socket||socket.readyState!==1;}
+function cancelConfirmation(){pendingAction=null;$('confirmation').style.display='none';}
+function askConfirmation(type){pendingAction={type,id:$('connection').value};$('confirmationText').textContent=type==='disconnect'?'Disconnect this StreamHub and forget its saved access details?':'Delete this saved StreamHub and its access details?';$('confirmation').style.display='block';}
 function allowConfiguration(allowed){configurationAllowed=allowed;$('connectionPanel').style.display=allowed?'block':'none';$('keyNotice').style.display=allowed?'none':'block';$('disconnect').disabled=!allowed||!socket||socket.readyState!==1||$('connection').value==='new';}
-function finish(text){clearTimeout(requestTimer);requestId=null;$('connect').disabled=!configurationAllowed||!socket||socket.readyState!==1;$('disconnect').disabled=$('connect').disabled||$('connection').value==='new';$('status').textContent=text;}
+function finish(text){clearTimeout(requestTimer);requestId=null;$('connect').disabled=!configurationAllowed||!socket||socket.readyState!==1;$('disconnect').disabled=$('connect').disabled||$('connection').value==='new';$('disconnect').disabled=!configurationAllowed||!socket||socket.readyState!==1||$('connection').value==='new';$('deleteConnection').disabled=$('disconnect').disabled;lockFields(configurationLocked);$('status').textContent=text;}
 function send(payload){
  if(!socket||socket.readyState!==1){finish('Stream Deck connection is unavailable. Select this key again.');return false;}
  socket.send(JSON.stringify({event:'sendToPlugin',action:actionUUID,context:uiContext,payload:{...payload,actionContext}}));return true;
@@ -42,10 +50,11 @@ window.connectElgatoStreamDeckSocket=(port,uuid,event,info,actionInfo)=>{
   if(m.event==='sendToPropertyInspector'){
    const p=m.payload||{};if(p.requestId&&requestId&&p.requestId!==requestId)return;
    if(p.connections){const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const previous=$('connection').value;$('connection').innerHTML=p.connections.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join('')+'<option value="new">+ Add StreamHub…</option>';$('connection').value=previous==='new'&&!requestId&&!p.newConnection?'new':p.connectionId||connectionId||'default';}
-   if(p.connectionId&&p.connectionSettings&&$('connection').value!=='new'&&(connectionId!==p.connectionId||!settingsLoaded||p.credentialsCleared||p.newConnection)){
-    connectionId=p.connectionId;settingsLoaded=true;clearTimeout(handshakeTimer);const cfg=p.connectionSettings;for(const field of ['name','address','key','previewOrigin','previewUsername'])$(field).value=cfg[field]||'';$('previewPassword').value='';
+   if(p.connectionId&&p.connectionSettings&&$('connection').value!=='new'&&(connectionId!==p.connectionId||!settingsLoaded||p.credentialsCleared||p.connectionDeleted||p.newConnection||p.configurationSaved&&p.requestId===requestId)){
+    cancelConfirmation();connectionId=p.connectionId;settingsLoaded=true;clearTimeout(handshakeTimer);const cfg=p.connectionSettings;for(const field of ['name','address','key','previewOrigin','previewUsername','webGuiUrl'])$(field).value=cfg[field]||'';$('webGuiProtocol').value=cfg.webGuiProtocol||'https';$('webGuiCustom').style.display=$('webGuiProtocol').value==='custom'?'block':'none';$('previewPassword').value='';
    }
-   if(typeof p.configurationAllowed==='boolean')allowConfiguration(p.configurationAllowed);document.getElementById("previewStatus").textContent=p.previewStatus||'';
+   if(typeof p.configurationLocked==='boolean'&&$('connection').value!=='new')lockFields(p.configurationLocked);
+   if(typeof p.configurationAllowed==='boolean')allowConfiguration(p.configurationAllowed);document.getElementById("previewStatus").textContent=[p.previewStatus,p.effectivePreviewOrigin?"Preview endpoint: "+p.effectivePreviewOrigin:""].filter(Boolean).join("\n");
    if(p.requestId&&requestId&&p.requestId!==requestId)return;
    const text=[p.status,p.error&&p.error!==p.status?p.error:''].filter(Boolean).join('\n');
    if(p.phase==='connecting'){$('connect').disabled=false;$('status').textContent=text||'Connecting…';}
@@ -56,8 +65,8 @@ window.connectElgatoStreamDeckSocket=(port,uuid,event,info,actionInfo)=>{
  socket.onclose=()=>{clearTimeout(handshakeTimer);finish('Stream Deck connection closed. Select this key again.');};
 };
 $('connect').onclick=()=>{
- if(!configurationAllowed)return;
- const settings={name:$('name').value.trim(),address:$('address').value.trim(),key:$('key').value.trim(),demo:false,previewOrigin:document.getElementById("previewOrigin").value.trim(),previewUsername:document.getElementById("previewUsername").value.trim(),previewPassword:document.getElementById("previewPassword").value};
+ if(!configurationAllowed||configurationLocked)return;
+ const settings={name:$('name').value.trim(),address:$('address').value.trim(),key:$('key').value.trim(),demo:false,previewOrigin:document.getElementById("previewOrigin").value.trim(),previewUsername:document.getElementById("previewUsername").value.trim(),previewPassword:document.getElementById("previewPassword").value,webGuiProtocol:$('webGuiProtocol').value||'https',webGuiUrl:$('webGuiUrl').value.trim()};
  if(!settings.address||!settings.key){finish('Enter both the StreamHub address and API key.');return;}
  requestId='connect-'+(++requestSerial);$('connect').disabled=true;$('status').textContent='Connecting…';
  clearTimeout(requestTimer);
@@ -65,13 +74,16 @@ $('connect').onclick=()=>{
  send({type:'configure',requestId,connectionId:$('connection').value||connectionId||'default',settings});$('connect').disabled=false;document.getElementById("previewPassword").value="";
 };
 $('connection').onchange=()=>{
- if(!configurationAllowed)return;clearTimeout(requestTimer);requestId=null;
- if($('connection').value==='new'){connectionId='new';for(const field of ['name','address','key','previewOrigin','previewUsername','previewPassword'])$(field).value='';$('status').textContent='Enter a name, address and API key for the new StreamHub.';$('disconnect').disabled=true;return;}
+ if(!configurationAllowed)return;cancelConfirmation();clearTimeout(requestTimer);requestId=null;
+ if($('connection').value==='new'){connectionId='new';lockFields(false);for(const field of ['name','address','key','previewOrigin','previewUsername','previewPassword','webGuiUrl'])$(field).value='';$('status').textContent='Enter a name, address and API key for the new StreamHub.';$('disconnect').disabled=true;$('deleteConnection').disabled=true;return;}
  send({type:'bindConnection',connectionId:$('connection').value});
 };
-$('disconnect').onclick=()=>{
- if(!configurationAllowed||$('connection').value==='new')return;
- clearTimeout(requestTimer);requestId='disconnect-'+(++requestSerial);$('status').textContent='Disconnecting…';
- send({type:'disconnect',requestId});for(const field of ['address','key','previewOrigin','previewUsername','previewPassword'])$(field).value='';
+$('webGuiProtocol').onchange=()=>{$('webGuiCustom').style.display=$('webGuiProtocol').value==='custom'?'block':'none';};
+$('deleteConnection').onclick=()=>{if(configurationAllowed&&$('connection').value!=='new')askConfirmation('deleteConnection');};
+$('disconnect').onclick=()=>{if(configurationAllowed&&$('connection').value!=='new')askConfirmation('disconnect');};
+$('cancelAction').onclick=cancelConfirmation;
+$('confirmAction').onclick=()=>{
+ if(!pendingAction||!configurationAllowed||pendingAction.id!==$('connection').value)return cancelConfirmation();
+ const type=pendingAction.type;cancelConfirmation();clearTimeout(requestTimer);requestId=type+'-'+(++requestSerial);$('status').textContent=type==='disconnect'?'Disconnecting…':'Deleting StreamHub…';send({type,requestId});
 };
 </script></body></html>

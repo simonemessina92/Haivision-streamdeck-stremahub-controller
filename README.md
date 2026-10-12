@@ -6,7 +6,7 @@ The plugin includes video previews, source routing, recording, intercom, video r
 
 ## Download and install
 
-**[Download v0.15.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.15.0/haivision-streamdeck-streamhub-plugin-v0.15.0.zip)**
+**[Download v0.16.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.16.0/haivision-streamdeck-streamhub-plugin-v0.16.0.zip)**
 
 You need Windows 10 or later, Stream Deck app 7.1 or later, and either a **Stream Deck XL** or **Stream Deck Mobile configured with 32 keys in an 8 x 4 layout**.
 
@@ -15,7 +15,7 @@ You need Windows 10 or later, Stream Deck app 7.1 or later, and either a **Strea
 3. In the Stream Deck app, select the **ONLINE / OFFLINE** key in the top-right corner.
 4. Enter a name for the unit, its address and API key, plus the web username and password. Click **Save and connect**.
 
-The web login is used for previews and device features. If the preview session expires, enter the password again and reconnect. Chrome, Companion and a separate Node.js installation are not needed to use the plugin.
+The web login is used for previews and device features. Saved connection fields are locked after a successful connection. To change them, confirm Disconnect, then enter the access details again. Chrome, Companion and a separate Node.js installation are not needed to use the plugin.
 
 Once the plugin is installed and the profile imported, you can delete the downloaded ZIP and its extracted files. Stream Deck keeps its own copies of the plugin and profile. Keep the Stream Deck app installed and running.
 
@@ -31,9 +31,17 @@ Temporary Mobile disconnections preserve the saved StreamHub access details. Whe
 
 ## Switching StreamHubs
 
-Press **ADD STREAMHUB**, then configure the new unit from **ONLINE / OFFLINE** in the app. **NEXT HUB** cycles through your configured units in the same panel; the name above ONLINE shows which one you are controlling. There is no fixed limit on saved units.
+Press **ADD STREAMHUB**, then configure the new unit from **ONLINE / OFFLINE** in the app. **NEXT HUB** cycles through all saved units in the same panel; the name above ONLINE shows which one you are controlling. There is no fixed limit on saved units.
 
 **PAGE** moves between pages of inputs, outputs or encoders within the current unit.
+
+## Hub details and remote access
+
+Press ONLINE / OFFLINE on the device to view hub information, system readings and reported licenses. OPEN WEB GUI opens the default browser on the Windows PC; choose HTTPS 443, HTTP 8888 or a custom browser URL in the connection settings. RECONNECT restarts the selected hub session without forgetting its saved access details.
+
+REMOTE ACCESS opens a compatible transmitter’s remote interface when the connected server and account allow it.
+
+REST API access uses HTTP 8893 or HTTPS 8896; web login and previews use HTTP 8888 or HTTPS 443. Use `https://hostname` for HTTPS API access. The API port must be reachable and the certificate trusted. StreamHubs managed through Hub360 are not currently validated.
 
 ## Channel controls
 
@@ -49,11 +57,13 @@ Available controls and statistics depend on the StreamHub version, license and c
 
 The password is used to log in and is not saved. Stream Deck stores the address, API key, username and preview token locally so the plugin can reconnect after a restart.
 
-**Disconnect** closes that unit's sessions and removes its access details. Its name stays in the list, and the other saved units are left alone. You will need to enter the connection details again to reconnect it. Do not share your personal settings or backups.
+**Disconnect** asks for confirmation, closes that unit's sessions and removes its access details. Its name stays in the list, and the other saved units are left alone. You will need to enter the connection details again to reconnect it. **Delete StreamHub** asks for confirmation and removes the saved unit. Other units and the controller profile are retained. Exporting a Stream Deck profile does not transfer the plugin’s saved access details to another PC.
+
+Do not share your personal settings or backups.
 
 ## Building from source
 
-`main` is the stable branch; `develop` is for ongoing work. Version **0.15.0** is the current stable release, verified with Stream Deck XL and two registered Mobile devices.
+`main` is the stable branch; `develop` is for ongoing work. Version **0.16.0** is the current stable release, verified with Stream Deck XL and two registered Mobile devices.
 
 Install Node.js 24, then run:
 

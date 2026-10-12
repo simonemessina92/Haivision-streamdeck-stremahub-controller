@@ -28,7 +28,7 @@ test('wrong server identity rejects frames and does not reconnect to it',async t
 });
 test('API key rejection requests web login without endless WAITING or retries',async t=>{
  const p=new NativePreviews({WebSocketClass:Socket});t.after(()=>p.stop());await p.start(connection,identity);
- Socket.instances.at(-1).packet('44{"message":"invalid token"}');assert.equal(p.status,'Preview login required');assert.equal(p.timer,null);
+ Socket.instances.at(-1).packet('44{"message":"invalid token"}');assert.match(p.status,/Preview login required/);assert.equal(p.timer,null);
 });
 test('MoJo and transmitter unit record commands are confirmed by device events, not hub recorder status',async t=>{
  const p=new NativePreviews({WebSocketClass:Socket});t.after(()=>p.stop());await p.start(connection,identity);
@@ -186,4 +186,46 @@ test('transmitter live profile rejection remains an error and unsupported source
  const oldSend=ws.send.bind(ws);ws.send=packet=>{oldSend(packet);if(packet.includes('setLiveProfile'))ws.event(['serverError',{result:{message:'Rejected'}}]);};
  await assert.rejects(p.setLiveProfile(1,'air','1',4),/rejected/);assert.equal(p.liveProfiles(1,'air').current,null);assert.equal(p.pendingLiveProfile,null);
  ws.event(['liveProfile',{channelId:1,result:{list:'invalid json'}}]);assert.equal(p.liveProfiles(1,'air').profiles.length,0);await assert.rejects(p.setLiveProfile(1,'air','0',4),/changed/);
+});
+
+test('remote access waits for native link replacement, checks device identity and ignores unsolicited links',async t=>{
+ const p=new NativePreviews({WebSocketClass:Socket});t.after(()=>p.stop());await p.start(connection,identity);const ws=Socket.instances.at(-1);ws.event(['user_role',{role:'admin'}]);ws.event(['getDeviceInfo',{result:identity}]);
+ ws.event(['getConfig',{result:{config:JSON.stringify({tunRemoteControl:{webProxyPort:8894,webProxyPortHttps:8895}})}}]);ws.event(['getChannelStatus',{result:{channel:[{hardwareIdentifier:'pro360',product:'PRO360',connectionStatus:1,instanceId:9,remoteControl:1,firmwareName:'pro3',version:'5.0'}],storageLevel:15,storageCapacity:1000}}]);
+ ws.event(['getStatusDevicesChange',{result:{device:[{channel:1,tunIpAddress:'192.0.2.9'}]}}]);ws.event(['getMonitorInfo',{result:{cpuPercent:5,memPercent:20,memTotal:4096}}]);assert.equal(p.system.cpuPercent,5);assert.equal(p.system.storageLevel,15);
+ ws.event(['remoteControlOpen','https://example.test']);assert.equal(p.pendingRemote,null);
+ const before=ws.sent.length,pending=p.remoteAccess(1,'pro360'),sent=JSON.parse(ws.sent.at(-1).slice(2));assert.equal(sent[0],'remoteControlTokenReplace');assert.equal(sent[1].hardwareIdentifier,'pro360');const url=sent[1].url.replace('/sso/rest-key/','/sso/temporary/');ws.event(['remoteControlOpen',url]);assert.equal(await pending,url);assert.equal(ws.sent.length,before+1);
+ const other=p.remoteAccess(1,'pro360');ws.event(['remoteControlOpen',url.replace('/encoderId/8','/encoderId/7')]);await assert.rejects(other,/match/);
+ const replacement=p.remoteAccess(1,'pro360');ws.event(['getChannelStatus',{result:{channel:[{hardwareIdentifier:'replacement',product:'PRO360',connectionStatus:1,instanceId:10}]}}]);await assert.rejects(replacement,/identity changed/);
+ p.stop();assert.equal(p.pendingRemote,null);assert.deepEqual(p.system,{});
+});
+test('legacy transmitter remote access uses native webconf route and current user role',async t=>{
+ const p=new NativePreviews({WebSocketClass:Socket});t.after(()=>p.stop());await p.start(connection,identity);const ws=Socket.instances.at(-1);ws.event(['getDeviceInfo',{result:identity}]);ws.event(['user_role',{role:'user'}]);ws.event(['getChannelStatus',{result:{channel:[{hardwareIdentifier:'old-pro',product:'DMNG-PRO',connectionStatus:1,instanceId:1}]}}]);
+ const base=ws.sent.length;assert.equal(await p.remoteAccess(1,'old-pro'),'http://192.0.2.1:8888/webconf/10.0.0.2:4014/dmngpro_index.html');assert.equal(ws.sent.length,base);
+ ws.event(['user_role',{role:'viewer'}]);assert.equal(p.remotePlan(1,'old-pro'),null);await assert.rejects(p.remoteAccess(1,'old-pro'),/unavailable/);
+});
+
+test('a verified saved preview session survives a domain to IP change without a new login or exposing it before server validation',async t=>{
+ const saved=[],bound=[],p=new NativePreviews({WebSocketClass:Socket,onToken:x=>saved.push(x),onVerified:x=>bound.push(x),fetchFn:async()=>{throw Error('Unexpected password login');}});t.after(()=>p.stop());
+ await p.start(connection,identity,{previewUsername:'admin',previewSessionCandidate:{token:'previous-session',identity}});const ws=Socket.instances.at(-1);assert.equal(ws.url.searchParams.get('token'),'previous-session');assert.deepEqual(saved,[]);
+ ws.event(['getDeviceInfo',{result:identity}]);assert.deepEqual(saved,['previous-session']);assert.equal(bound[0].hardwareIdentifier,identity.hardwareIdentifier);assert.equal(p.verified,true);
+});
+test('address changes never send the old preview session to a different StreamHub',async t=>{
+ const failures=[],p=new NativePreviews({WebSocketClass:Socket,onAuthFailure:()=>failures.push(true)});t.after(()=>p.stop());await p.start(connection,identity,{previewSessionCandidate:{token:'other-server-session',identity:{hardwareIdentifier:'other-hub'}}});const ws=Socket.instances.at(-1);assert.equal(ws.url.searchParams.get('token'),connection.key);
+ ws.packet('44{"message":"invalid token"}');assert.equal(failures.length,1);assert.match(p.status,/Enter the web password/);
+});
+test('HTTP 403 from preview login explains web credentials or endpoint instead of requiring full Disconnect',async t=>{
+ const errors=[],p=new NativePreviews({WebSocketClass:Socket,onAuthFailure:()=>errors.push(true),fetchFn:async()=>({ok:false,status:403})});t.after(()=>p.stop());await p.start(connection,identity,{previewUsername:'admin',previewPassword:'invalid'});assert.match(p.status,/HTTP 403/);assert.match(p.status,/Web interface URL/);assert.equal(errors.length,1);assert.equal(p.ws,null);
+});
+
+test('unreachable or HTTP403 old web override falls back to the configured REST host with fresh credentials',async t=>{
+ const calls=[],p=new NativePreviews({WebSocketClass:Socket,fetchFn:async url=>{calls.push(new URL(url).hostname);if(new URL(url).hostname==='old.example.test')return {ok:false,status:403};return {ok:true,json:async()=>({token:'local-web-token'})};}});t.after(()=>p.stop());await p.start(connection,identity,{previewOrigin:'https://old.example.test',previewUsername:'admin',previewPassword:'temporary'});await new Promise(r=>setImmediate(r));assert.deepEqual(calls,['old.example.test','192.0.2.1']);assert.equal(p.origin,'http://192.0.2.1:8888');assert.equal(Socket.instances.at(-1).url.searchParams.get('token'),'local-web-token');Socket.instances.at(-1).event(['getDeviceInfo',{result:identity}]);assert.equal(p.verified,true);assert.equal(p.previewSettings.previewPassword,undefined);
+});
+test('address-only change tries valid server-bound session before login, then retries a rejected session with the supplied password once',async t=>{
+ let logins=0;const p=new NativePreviews({WebSocketClass:Socket,fetchFn:async()=>{logins++;return {ok:true,json:async()=>({token:'fresh-session'})};}});t.after(()=>p.stop());await p.start(connection,identity,{previewUsername:'admin',previewPassword:'temporary',previewSessionCandidate:{token:'saved-session',identity}});assert.equal(logins,0);const old=Socket.instances.at(-1);assert.equal(old.url.searchParams.get('token'),'saved-session');old.packet('44{"message":"expired"}');await new Promise(r=>setImmediate(r));assert.equal(logins,1);const fresh=Socket.instances.at(-1);assert.equal(fresh.url.searchParams.get('token'),'fresh-session');fresh.event(['getDeviceInfo',{result:identity}]);assert.equal(p.verified,true);assert.equal(p.previewSettings.previewPassword,undefined);
+});
+
+test('native getLicense decodes serialized licensing fields before UI and capability checks',async t=>{
+ const p=new NativePreviews({WebSocketClass:Socket});t.after(()=>p.stop());await p.start(connection,identity);const ws=Socket.instances.at(-1);ws.event(['getDeviceInfo',{result:identity}]);
+ ws.event(['getLicense',{result:{status:'valid',license:JSON.stringify({multiView:true,intercom:true,NDIInput:32}),features:JSON.stringify({features:{multiView:{enabled:true},NDIInput:[{count:32}]}})}}]);
+ assert.equal(p.license.license.multiView,true);assert.equal(p.license.features.NDIInput[0].count,32);assert.equal(require('../org.streamhub.controller.sdPlugin/bin/licenses').rows(p.license).find(r=>r.label==='NDI INPUTS').value,'32');
 });

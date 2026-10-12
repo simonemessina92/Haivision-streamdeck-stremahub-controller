@@ -1,19 +1,20 @@
-# v0.15.0 — Golden release
+# v0.16.0 — Golden release
 
-For Stream Deck XL and Stream Deck Mobile with 32 keys in an 8 x 4 layout.
+For Stream Deck XL and Stream Deck Mobile using 32 keys in an 8 x 4 layout.
 
-- Build and route Multiview grids from 1 x 1 to 4 x 4, with live cell previews and a two-page input picker.
-- Route Multiview directly to SDI/NDI, or through an H.264/HEVC encoder for IP outputs. Assignment and going live remain separate choices.
-- Read channel configuration, available live statistics and alerts from STATUS DETAILS on inputs, outputs and encoders.
-- Select existing LIVE profiles on compatible transmitters and see the selected preset. Profile selection does not start transmission.
-- Show input recording, intercom and video return controls according to the assigned source and its capabilities.
-- Improve Mojo Pro command responsiveness, keep parameter modes independent, and use manual/auto white balance, fixed shutter steps, zoom reset and 2 dB audio gain steps.
-- Replace the redundant Mojo program thumbnail with an output indicator. OUTPUT LIVE requires both a live input and an active routed output.
+- Add HUB DETAILS with hub information, system readings and the full reported license list.
+- Open the hub web GUI in the PC browser using HTTPS 443, HTTP 8888 or a custom URL.
+- Add REMOTE ACCESS for compatible transmitters when supported by the server and account.
+- Improve preview-session recovery when changing between a hostname and a local address, with server identity checks.
+- Lock saved connection fields after a successful connection. Disconnect and Delete StreamHub now require confirmation.
+- Keep NEXT HUB working across configured, disconnected and incomplete saved units.
+- Recover when OPEN occupies the connection key in an existing controller page.
+- Prevent deleted units from returning through stale page references, and isolate slow or failing device sessions.
+- Clarify API connection errors and preserve the separate API and web transports.
+- Align the Multiview label with adjacent bulk controls and place the monitor icon beneath it.
 
-Microphone selection remains in the Mojo Pro app; no remote audio-source selector is included.
+Existing channel controls, Multiview, previews and Mojo Pro controls are retained. The local version was tested by the project owner; 167 automated tests pass, along with Elgato validation.
 
-The local controller was tested by the project owner. All 131 automated tests pass, and Elgato validation passes. The installer contains no connection credentials and has no Chrome dependency.
+Windows 10+, Stream Deck app 7.1+ and an XL or Mobile Pro 32-key layout are required. Hub360-managed StreamHubs are not currently validated. Saved access details remain local to the PC and are not included when exporting a Stream Deck profile.
 
-Existing saved units and profiles are retained when upgrading. Windows 10+, Stream Deck app 7.1+ and an XL or Mobile Pro 32-key layout are required.
-
-The previous v0.14.0 release remains available.
+The previous v0.15.0 release remains available.

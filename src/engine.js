@@ -8,7 +8,7 @@ const {copyText}=require('./clipboard');
 const {GROUPS,outputGroup,channel,canEjectOutput,nextOutputProfile,ipProfiles}=require('./outputs');
 class Engine {
  constructor(createClient,notify=()=>{},fetchFn=globalThis.fetch,options={}){
-  this.copyText=options.copyText||copyText;this.networkSignature=null;
+  this.openUrl=options.openUrl||(()=>{throw Error('Browser access is available from the Stream Deck app');});this.reconnect=options.reconnect||(()=>{throw Error('Reconnect from ONLINE / OFFLINE settings in the app');});this.copyText=options.copyText||copyText;this.networkSignature=null;
   this.abortController=new AbortController();this.disposed=false;
   const originalFetch=fetchFn;fetchFn=(url,options={})=>{
    const signals=[this.abortController.signal];if(options.signal)signals.push(options.signal);
@@ -21,7 +21,7 @@ class Engine {
   this.s={section:'INPUT',outputGroup:'SDI',view:'list',page:0,online:false,demo:false,busy:false,error:'',data:{inputs:[],outputs:[],outputProfiles:[]},encoders:[],encoderCapacity:null,encoderError:'',camera:null,selected:null,picker:null};
   this.stack=[];this.revision=0;this.refreshing=false;this.previewLoading=false;
   this.native=options.nativePreviews?new NativePreviews({
-   fetchFn,onToken:options.onPreviewToken,
+   fetchFn,onToken:options.onPreviewToken,onVerified:options.onPreviewIdentity,onAuthFailure:options.onPreviewAuthFailure,
    onStatus:status=>{this.s.previewStatus=status;this.applyDeviceRecording();this.emit();},onDevices:()=>{this.applyDeviceRecording();this.syncMultiview();this.emit();},
    onFrame:frame=>{this.applyDeviceRecording();if(frame.kind==='input')frame.uid=this.s.data.inputs.find(i=>i.id===frame.id)?.uid;this.useNativePreview();this.syncMultiviewPreviews();this.updateProgram();this.emit();}
   }):null;this.extra.native=this.native;
@@ -30,7 +30,7 @@ class Engine {
  emit(){if(!this.disposed)this.notify(this.s);}
  keys(){this.applyChannelDetails();return layout(this.s);}
  async configure(settings){
-  this.s.connectionName=String(settings.name||'').trim();
+  this.s.connectionName=String(settings.name||'').trim();this.s.hub={};this.s.hubAddress='';this.s.webUrl=null;this.s.canReconnect=!!(settings.address&&settings.key&&!settings.disconnected);this.s.hubTab='INFO';if(settings.address){const connection={base:this.client.normalizeAddress(settings.address)};this.s.hubAddress=connection.base;this.s.webUrl=require('./remote-access').webGuiAddress(connection,settings);}
   if(this.s.busy||this.refreshing)throw Error('Wait for the current command before changing connection');
   this.native?.stop();this.revision++;this.stack=[];this.s.selected=null;this.s.camera=null;this.s.preview=null;this.s.program=null;this.s.programIndex=0;this.s.view='list';this.s.page=0;this.s.error='';this.s.encoders=[];this.s.encoderCapacity=null;this.s.online=false;this.s.capabilities=null;this.s.multiview=null;this.s.multiviewAvailable=false;this.s.multiviewError='';this.s.bulk=null;this.s.outputBulk=null;this.s.inputBulk=null;this.s.demo=!!settings.demo;
   this.values={};this.client=this.createClient(this.storage,this.fetch);
@@ -42,8 +42,8 @@ class Engine {
   finally{this.s.busy=false;this.emit();}
  }
  applyChannelDetails(){
-  const model=require('./channel-details');
-  for(const input of this.s.data.inputs){const entry=this.native?.verified?this.native.details?.get('input:'+input.id,input.uid):null;input.liveStats=entry?model.statistics(entry.row):[];input.statsTime=entry?.time;if(!this.s.demo){const live=this.native?.liveProfiles?.(input.id,input.uid);input.liveProfiles=live?.profiles||[];input.liveProfileId=live?.current??null;input.liveProfileInstance=live?.instance??null;}const info=this.native?.verified?this.native.details?.get('inputInfo:'+input.id,input.uid):null;if(info)input.streamDetails=model.configuration(info.row,...(this.native?.channels?.[input.id-1]?.hardwareIdentifier===input.uid?[this.native.channels[input.id-1]]:[]));}
+  const model=require('./channel-details');this.s.hub={metadata:{...(this.s.capabilities||{}),...(this.native?.verified?this.native.metadata:{})},license:this.native?.verified?this.native.license:null,network:this.native?.verified?this.native.network:null,system:this.native?.verified?this.native.system:null};
+  for(const input of this.s.data.inputs){const entry=this.native?.verified?this.native.details?.get('input:'+input.id,input.uid):null;input.liveStats=entry?model.statistics(entry.row):[];input.statsTime=entry?.time;if(!this.s.demo){const live=this.native?.liveProfiles?.(input.id,input.uid);input.liveProfiles=live?.profiles||[];input.liveProfileId=live?.current??null;input.liveProfileInstance=live?.instance??null;input.remoteAccessAvailable=!!this.native?.remotePlan?.(input.id,input.uid);}const info=this.native?.verified?this.native.details?.get('inputInfo:'+input.id,input.uid):null;if(info)input.streamDetails=model.configuration(info.row,...(this.native?.channels?.[input.id-1]?.hardwareIdentifier===input.uid?[this.native.channels[input.id-1]]:[]));}
   for(const output of this.s.data.outputs){const entry=this.native?.verified?this.native.details?.get(output.type+':'+(output.configIndex??output.id)):null;output.liveStats=entry?model.statistics(entry.row):[];output.statsTime=entry?.time;const info=this.native?.verified?this.native.details?.get('outputInfo:'+output.type+':'+(output.configIndex??output.id)):null;if(info)output.streamDetails=model.configuration(info.row);}
   for(const encoder of this.s.encoders){const entry=this.native?.verified?this.native.details?.get('encoder:'+encoder.id):null,status=this.native?.verified?this.native.details?.get('encoderStatus:'+encoder.id):null;encoder.liveStats=entry?model.statistics(entry.row):[];encoder.statsTime=entry?.time;if(status)encoder.streamDetails=model.configuration(status.row);if(status){encoder.status=Number(status.row.status);encoder.message=status.row.message||'';}}
 
@@ -184,9 +184,19 @@ class Engine {
    if(!this.s.demo&&this.s.online&&c.section==='MOJO PRO')await this.mutate(()=>this.discover());return;
   }
   if(c.type==='page'){this.s.page=(this.s.page+(c.delta??1))%(c.pages||2);this.emit();return;}
+  if(c.type==='hub'){if(this.s.view!=='hub'){this.push('hub');this.s.hubTab='INFO';}this.emit();return;}
+  if(c.type==='hubTab'){if(this.s.view==='hub'&&['INFO','SYSTEM','LICENSES'].includes(c.tab)){this.s.hubTab=c.tab;this.s.page=0;this.emit();}return;}
+  if(c.type==='hubWeb'){if(!this.s.webUrl)throw Error('Configure the StreamHub web address first');await this.openUrl(this.s.webUrl);return;}
+  if(c.type==='hubReconnect'){if(!this.s.canReconnect)throw Error('Enter connection details in the Stream Deck app first');await this.reconnect();return;}
   if(c.type==='refresh'){await this.refresh();return;}
   if(!this.s.online)throw Error('StreamHub is disconnected');
   if(this.s.busy||this.refreshing)throw Error('Wait for the current command to finish');
+  if(c.type==='remoteAccess'){
+   const input=this.checkInput(c.id,c.uid);if(this.s.view!=='input'||this.s.selected?.id!==c.id||this.s.selected?.uid!==c.uid||!input.connected||!input.remoteAccessAvailable)throw Error('Remote access is unavailable for this input');
+   const revision=this.revision;const url=await this.mutate(()=>this.native.remoteAccess(c.id,c.uid));
+   if(this.disposed||this.revision!==revision||this.s.view!=='input'||this.s.selected?.id!==c.id||this.s.selected?.uid!==c.uid)throw Error('Input changed before opening remote access');
+   await this.openUrl(url);return;
+  }
   if(c.type==='multiview'){
    if(!this.s.demo)await this.mutate(()=>this.readMultiview());
    if(!this.s.multiviewAvailable)throw Error('Multiview is unavailable');

@@ -6,27 +6,35 @@ function thumbnail(raw){
  return /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\r\n]+$/.test(value)?value:null;
 }
 class NativePreviews{
- constructor({onFrame=()=>{},onStatus=()=>{},onToken=()=>{},onDevices=()=>{},fetchFn=globalThis.fetch,WebSocketClass=globalThis.WebSocket}={}){
-  Object.assign(this,{onFrame,onStatus,onToken,onDevices,fetch:fetchFn,WS:WebSocketClass});this.liveProfileRows=new Map();this.pendingLiveProfile=null;this.details=new (require('./channel-details').LiveDetails)();this.frames=new Map();this.channels=[];this.network={localIps:[],publicIp:null,hostname:null};this.metadata={};this.config=null;this.license=null;this.devices=new Map();this.pendingRecord=null;this.selectedInput=null;this.subscribed=null;this.selectedInputs=null;this.subscribedInputs=new Set();this.generation=0;this.ws=null;this.timer=null;this.status='Preview login required';this.origin=null;
+ constructor({onFrame=()=>{},onStatus=()=>{},onToken=()=>{},onVerified=()=>{},onAuthFailure=()=>{},onDevices=()=>{},fetchFn=globalThis.fetch,WebSocketClass=globalThis.WebSocket}={}){
+  Object.assign(this,{onFrame,onStatus,onToken,onVerified,onAuthFailure,onDevices,fetch:fetchFn,WS:WebSocketClass});this.pendingRemote=null;this.role=null;this.system={};this.liveProfileRows=new Map();this.pendingLiveProfile=null;this.details=new (require('./channel-details').LiveDetails)();this.frames=new Map();this.channels=[];this.network={localIps:[],publicIp:null,hostname:null};this.metadata={};this.config=null;this.license=null;this.devices=new Map();this.pendingRecord=null;this.selectedInput=null;this.subscribed=null;this.selectedInputs=null;this.subscribedInputs=new Set();this.generation=0;this.ws=null;this.timer=null;this.status='Preview login required';this.origin=null;
  }
- stop(){this.liveProfileRows.clear();this.details.clear();this.finishRecord(Error('Device connection closed before confirmation'));this.channels=[];this.network={localIps:[],publicIp:null,hostname:null};this.metadata={};this.config=null;this.license=null;this.devices.clear();this.subscribed=null;this.selectedInput=null;this.selectedInputs=null;this.subscribedInputs.clear();this.generation++;this.token=null;this.origin=null;this.expected=null;clearTimeout(this.timer);this.timer=null;this.verified=false;this.frames.clear();if(this.ws){const ws=this.ws;this.ws=null;ws.close();}}
+ stop(){this.previewSettings=null;this.previewConnection=null;this.reusedPreviewSession=false;this.wasPreviewVerified=false;this.finishRemote(Error('StreamHub connection closed before remote access confirmation'));this.role=null;this.system={};this.liveProfileRows.clear();this.details.clear();this.finishRecord(Error('Device connection closed before confirmation'));this.channels=[];this.network={localIps:[],publicIp:null,hostname:null};this.metadata={};this.config=null;this.license=null;this.devices.clear();this.subscribed=null;this.selectedInput=null;this.selectedInputs=null;this.subscribedInputs.clear();this.generation++;this.token=null;this.origin=null;this.expected=null;clearTimeout(this.timer);this.timer=null;this.verified=false;this.frames.clear();if(this.ws){const ws=this.ws;this.ws=null;ws.close();}}
  setStatus(status){this.status=status;this.onStatus(status);}
  async start(connection,identity,settings={}){
   this.stop();if(!connection||!identity?.hardwareIdentifier)return;
   const generation=this.generation;
   const rest=new URL(connection.base),origin=settings.previewOrigin||rest.protocol+'//'+rest.hostname+(rest.protocol==='http:'?':8888':'');
   const web=new URL(origin);if(!['http:','https:'].includes(web.protocol)||web.username||web.password)throw Error('Invalid preview web address');
-  this.origin=web.origin;this.expected=identity;this.token=settings.previewToken||connection.key;
-  if(settings.previewUsername&&settings.previewPassword){
+  this.origin=web.origin;this.expected=identity;const candidate=settings.previewSessionCandidate,reuse=candidate&&require('./connection-session').sameServer(candidate.identity,identity);this.reusedPreviewSession=!!reuse;this.previewConnection=connection;this.previewSettings={...settings};this.token=settings.previewToken||(reuse?candidate.token:null)||connection.key;
+  if(settings.previewUsername&&settings.previewPassword&&!reuse){
    this.setStatus('Signing in for previews');
    try{
     const response=await this.fetch(new URL('/login',web),{method:'POST',redirect:'error',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:settings.previewUsername,password:settings.previewPassword}),signal:AbortSignal.timeout(6000)});
-    if(!response.ok)throw Error('Preview login failed (HTTP '+response.status+')');
+    if(generation!==this.generation)return;
+    if(!response.ok){if([401,403].includes(response.status))this.onAuthFailure();throw Error('Preview login failed (HTTP '+response.status+'). Check web credentials and Web interface URL.');}
     const data=await response.json();if(typeof data.token!=='string'||!data.token)throw Error('Preview login returned no token');
     if(generation!==this.generation)return;this.token=data.token;this.onToken(data.token);
-   }catch(error){if(generation===this.generation)this.setStatus(error.name==='TimeoutError'?'Preview login timed out':error.message.startsWith('Preview')?error.message:'Preview web interface is unreachable');return;}
+    }catch(error){if(generation!==this.generation)return;if(await this.tryPreviewFallback())return;const code=error.cause?.code||error.code;this.setStatus(error.name==='TimeoutError'?'Preview login timed out':error.message.startsWith('Preview')?error.message:code&&/CERT|SELF_SIGNED|TLS/.test(code)?'Preview HTTPS certificate is not trusted. Use the local HTTP preview URL or a trusted certificate.':'Preview web interface is unreachable'+(code?' ('+code+')':''));return;}
+
   }
   if(generation===this.generation)this.connect(generation);
+ }
+ tryPreviewFallback(){
+  const settings=this.previewSettings,connection=this.previewConnection;if(!settings||!connection||settings.previewEndpointFallbackDone||!this.origin)return false;
+  const fallback=require('./remote-access').previewFallback(connection,this.origin,settings.previewEndpointAutoFollow);if(!fallback)return false;
+  const identity=this.expected,next={...settings,previewOrigin:fallback,previewToken:this.token,previewEndpointFallbackDone:true};
+  void this.start(connection,identity,next);return true;
  }
  connect(generation){
   if(generation!==this.generation)return;
@@ -39,26 +47,29 @@ class NativePreviews{
    if(this.ws!==ws||generation!==this.generation)return;
    const packet=String(event.data);if(packet.length>2000000)return;
    if(packet.startsWith('0')){ws.send('40');return;}if(packet==='2'){ws.send('3');return;}
-   if(packet.startsWith('44')){denied=true;clearTimeout(deadline);this.setStatus('Preview login required');ws.close();return;}
+   if(packet.startsWith('44')){denied=true;clearTimeout(deadline);this.onAuthFailure();const credentials=this.previewSettings;if(this.reusedPreviewSession&&credentials?.previewUsername&&credentials?.previewPassword&&!credentials.previewPasswordRetry){void this.start(this.previewConnection,this.expected,{...credentials,previewSessionCandidate:null,previewToken:undefined,previewPasswordRetry:true});return;}this.setStatus('Preview login required. Enter the web password and Save and connect.');ws.close();return;}
    if(!packet.startsWith('42['))return;let data;try{data=JSON.parse(packet.slice(2));}catch{return;}
    const name=data[0],value=data[1]?.result??data[1];
-   if(name==='newToken'&&typeof data[1]==='string'){this.token=data[1];this.onToken(this.token);return;}
+   if(name==='newToken'&&typeof data[1]==='string'){this.token=data[1];this.onToken(this.token);if(this.verified)this.onVerified(this.expected);return;}
    if(name==='getDeviceInfo'||name==='abusProxyIsReady'){
     if(typeof value?.hardwareIdentifier!=='string')return;
     if(value.hardwareIdentifier.trim()!==this.expected.hardwareIdentifier||this.expected.dockerId&&value.dockerId&&value.dockerId!==this.expected.dockerId){denied=true;this.setStatus('Preview server mismatch');ws.close();return;}
-    this.metadata={...this.metadata,...value};this.verified=true;clearTimeout(deadline);this.setStatus('Previews connected');
+    this.metadata={...this.metadata,...value};this.verified=true;clearTimeout(deadline);if(this.reusedPreviewSession)this.onToken(this.token);this.onVerified(this.expected);if(this.previewSettings)delete this.previewSettings.previewPassword;this.setStatus('Previews connected');
     for(const frame of pending.values())this.store(frame);pending.clear();this.onDevices();this.subscribe();return;
    }
+   if(name==='user_role'){this.role=['admin','user','viewer'].includes(String(value?.role).toLowerCase())?String(value.role).toUpperCase():null;if(this.verified)this.onDevices();return;}
+   if(name==='getMonitorInfo'&&this.verified){const fields={};for(const field of ['cpuPercent','memPercent','memTotal'])if(Number.isFinite(value?.[field]))fields[field]=value[field];this.system={...this.system,...fields,time:Date.now()};this.onDevices();return;}
+   if(name==='remoteControlOpen'){if(this.verified&&this.pendingRemote){const p=this.pendingRemote;try{const channel=this.terminal(p.id,p.uid);if(channel.instanceId!==p.instance)throw Error('Transmitter identity changed before remote access confirmation');this.finishRemote(null,require('./remote-access').validateResponse(value,p.plan));}catch(error){this.finishRemote(error);}}return;}
    if(name==='ip_local'&&Array.isArray(value)){this.network.localIps=value.filter(x=>typeof x==='string').slice(0,16);return;}
    if(name==='ip_public'&&typeof value==='string'){this.network.publicIp=value;return;}
    if(name==='getConfig'){try{const config=typeof value?.config==='string'?JSON.parse(value.config):value?.config;if(config&&typeof config==='object'){this.config=config;if(typeof config.hostname==='string')this.network.hostname=config.hostname;}}catch{}if(this.verified)this.onDevices();return;}
-   if(name==='getLicense'){this.license=value;if(this.verified)this.onDevices();return;}
+   if(name==='getLicense'){this.license=require('./licenses').normalize(value);if(this.verified)this.onDevices();return;}
    if(name==='getChannelStatus'&&Array.isArray(value?.channel)){
     const next=value.channel.slice(0,32);
     for(let n=0;n<next.length;n++)if(this.channels[n]&&(this.channels[n].hardwareIdentifier!==next[n].hardwareIdentifier||this.channels[n].instanceId!==next[n].instanceId)){
-     this.liveProfileRows.delete(n+1);this.subscribedInputs.delete(n+1);this.devices.delete(n+1);if(this.pendingRecord?.id===n+1)this.finishRecord(Error('Device identity changed before recording confirmation'));
+     if(this.pendingRemote?.id===n+1)this.finishRemote(Error('Transmitter identity changed before remote access confirmation'));this.liveProfileRows.delete(n+1);this.subscribedInputs.delete(n+1);this.devices.delete(n+1);if(this.pendingRecord?.id===n+1)this.finishRecord(Error('Device identity changed before recording confirmation'));
     }
-    this.channels=next;if(this.verified){this.onDevices();this.subscribe();}return;
+    this.channels=next;if(this.verified){const storage={};for(const field of ['storageCapacity','storageLevel'])if(Number.isFinite(value[field]))storage[field]=value[field];if(Object.keys(storage).length)this.system={...this.system,...storage,storageTime:Date.now()};this.onDevices();this.subscribe();}return;
    }
    if(name==='getStatusDevicesChange'&&Array.isArray(value?.device)){
     for(const device of value.device){
@@ -83,6 +94,7 @@ class NativePreviews{
     }
    }
    if(this.verified){const consumed=this.details.receive(name,value,data[1],this.channels);if(consumed){this.onDevices();return;}}
+   if(name==='serverError'&&this.pendingRemote){this.finishRemote(Error('StreamHub rejected remote access'));return;}
    if(name==='serverError'&&this.pendingLiveProfile){this.pendingLiveProfile.error='StreamHub rejected the transmitter live profile';return;}
    if(name==='serverError'&&this.pendingRecord){this.finishRecord(Error('StreamHub rejected the device recording command'));return;}
    const kind={previewChange:'input',inputPreviewChange:'input',physicalPreviewChange:'SDI',NDIPreviewChange:'NDI',encoderPreviewChange:'encoder'}[name];if(!kind)return;
@@ -93,7 +105,7 @@ class NativePreviews{
    if(this.verified)this.store(frame);else pending.set(kind+':'+id,frame);
   };
   ws.onerror=()=>{if(this.ws===ws)this.setStatus('Preview connection failed');};
-  ws.onclose=()=>{clearTimeout(deadline);if(this.ws!==ws)return;this.ws=null;this.verified=false;this.frames.clear();this.liveProfileRows.clear();this.details.clear();this.devices.clear();this.channels=[];this.subscribed=null;this.finishRecord(Error('Device connection closed before confirmation'));if(!denied&&generation===this.generation){this.setStatus('Reconnecting previews');this.timer=setTimeout(()=>this.connect(generation),5000);}};
+  ws.onclose=()=>{clearTimeout(deadline);if(this.ws!==ws)return;this.ws=null;this.wasPreviewVerified=this.verified;this.verified=false;this.frames.clear();this.finishRemote(Error('StreamHub connection closed before remote access confirmation'));this.role=null;this.system={};this.liveProfileRows.clear();this.details.clear();this.devices.clear();this.channels=[];this.subscribed=null;this.finishRecord(Error('Device connection closed before confirmation'));if(!denied&&generation===this.generation){if(!this.wasPreviewVerified&&this.tryPreviewFallback())return;this.setStatus('Reconnecting previews');this.timer=setTimeout(()=>this.connect(generation),5000);}};
  }
  device(id,uid){
   if(!this.verified)return null;
@@ -114,6 +126,18 @@ class NativePreviews{
   return {nativeDiagnostic:terminalFields({...r,...d,channelStatus:r.channelStatus}),intercomAvailable:Number(this.metadata.allowedIntercom)>0&&[1,2,3,4].includes(status),intercom:[1,2,3,4].includes(status)?[2,3,4].includes(status):typeof d.intercomStatus==='number'?d.intercomStatus===5:null,
    returnCapability:Number(r.videoIFBDecoderCapability)||0,returnSourceProfile:Number(d.videoReturnProfile)||0,returnStatus:d.videoIFBStatus??null,
    returnEncoder:p&&Number(p.videoIFBEncoderIdx)>=0?Number(p.videoIFBEncoderIdx)+1:null,returnSource:p&&Number(p.videoIFBSourceIdx)>=0?Number(p.videoIFBSourceIdx)+1:null};
+ }
+ remotePlan(id,uid){
+  if(!this.verified)return null;const channel=this.channels[id-1];if(!channel||(channel.hardwareIdentifier||channel.uid||String(id))!==uid)return null;
+  return require('./remote-access').plan({origin:this.origin,token:this.token,role:this.role,channel:{...channel,id},device:this.devices.get(id),config:this.config});
+ }
+ finishRemote(error,url){const p=this.pendingRemote;if(!p)return;this.pendingRemote=null;clearTimeout(p.timer);error?p.reject(error):p.resolve(url);}
+ async remoteAccess(id,uid){
+  const channel=this.terminal(id,uid),plan=this.remotePlan(id,uid);if(!plan)throw Error('Remote access is unavailable for this transmitter or user');
+  if(this.pendingRemote)throw Error('Remote access is already pending');if(!plan.replace)return plan.url;
+  return new Promise((resolve,reject)=>{const pending={id,uid,instance:channel.instanceId,plan,resolve,reject};this.pendingRemote=pending;pending.timer=setTimeout(()=>{if(this.pendingRemote===pending)this.finishRemote(Error('StreamHub did not return a remote access link'));},8000);
+   try{this.ws.send('42'+JSON.stringify(['remoteControlTokenReplace',{url:plan.url,hardwareIdentifier:plan.hardwareIdentifier}]));}catch{this.finishRemote(Error('Could not request transmitter remote access'));}
+  });
  }
  liveProfiles(id,uid){
   if(!this.verified)return null;const channel=this.channels[id-1],row=this.liveProfileRows.get(id);

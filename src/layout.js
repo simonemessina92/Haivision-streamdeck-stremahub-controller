@@ -15,7 +15,7 @@ function layout(s){
  SECTIONS.forEach((title,i)=>a[i]=key(title==='INPUT'?'INPUTS':title==='OUTPUT'?'OUTPUTS':title,{type:'section',section:title},COLORS.tab,{active:activeSection===title,kind:'tab'}));
  // BACK and connection status stay in the top row; asset arrows sit beside detail controls.
  if(s.view!=='list')a[4]=key('BACK',{type:'back'},COLORS.nav,{glyph:'back'});
- a[7]=key((s.connectionName?String(s.connectionName).slice(0,36)+'\n':'')+(s.demo?'DEMO':s.online?'ONLINE':'OFFLINE'),{type:'refresh'},s.demo?COLORS.warning:s.online?COLORS.on:COLORS.danger,{kind:'status'});
+ a[7]=key((s.connectionName?String(s.connectionName).slice(0,36)+'\n':'')+(s.demo?'DEMO':s.online?'ONLINE':'OFFLINE'),{type:'hub'},s.demo?COLORS.warning:s.online?COLORS.on:COLORS.danger,{kind:'status'});
  const header=(title,subtitle='')=>{a[8]=key(title,null,COLORS.info,{kind:'heading'});if(subtitle)a[9]=key(subtitle,null,COLORS.muted,{kind:'heading'});};
  const list=(items,make,empty='NO ITEMS',add=null)=>{
   const entries=add?[...items,{addTile:true}]:items;
@@ -24,8 +24,13 @@ function layout(s){
   entries.slice(s.page*16,s.page*16+16).forEach((item,n)=>a[16+n]=item.addTile?add:make(item));
   if(!entries.length)a[16]=key(empty,null,COLORS.muted,{kind:'heading'});
  };
- if(!s.online&&s.view!=='mojo'){header('SETUP\nCONNECTION');if(s.error)a[16]=key('CONNECTION\nFAILED',null,COLORS.danger);return a;}
- if(s.view==='list'){
+ if(!s.online&&!['mojo','hub'].includes(s.view)){header('SETUP\nCONNECTION');if(s.error)a[16]=key('CONNECTION\nFAILED',null,COLORS.danger);return a;}
+ if(s.view==='hub'){
+  header('HUB\nDETAILS',s.connectionName||'STREAMHUB');const tab=s.hubTab||'INFO';
+  ['INFO','SYSTEM','LICENSES'].forEach((title,n)=>a[10+n]=key(title,{type:'hubTab',tab:title},COLORS.nav,{kind:'tab',active:tab===title}));
+  a[13]=key('REFRESH',{type:'refresh'},COLORS.nav,{disabled:!s.online});a[14]=key('OPEN\nWEB GUI',{type:'hubWeb'},COLORS.nav,{icon:'Web',disabled:!s.webUrl});a[15]=key('RECONNECT',{type:'hubReconnect'},COLORS.nav,{disabled:!s.canReconnect});
+  list(require('./channel-details').tiles(require('./hub-details').entries(s,tab)),item=>key(item.title,null,COLORS.info,{kind:'heading'}));
+ }else if(s.view==='list'){
   if(s.section==='INPUT'||s.section==='MOJO PRO'){
    const rows=s.data.inputs.filter(i=>i.id<=32&&(s.section==='INPUT'||i.isMojo&&i.connected));
    a[8]=key(rows.length+' SOURCES',null,COLORS.muted,{kind:'heading'});
@@ -74,6 +79,7 @@ function layout(s){
   if(assigned)a[19]=key('HUB REC\n'+([2,4].includes(i.recorderStatus)?'ON':'OFF'),{type:'record',id:i.id,uid:i.uid,endpoint:'streamhubRecord',enabled:![2,4].includes(i.recorderStatus)},[2,4].includes(i.recorderStatus)?COLORS.record:COLORS.action,{disabled:!Number.isFinite(i.recorderStatus)||i.recorderStatus===0||(!i.connected&&i.protocolId<0),active:[2,4].includes(i.recorderStatus),icon:'Record'});
   a[21]=key('ROUTE TO\nOUTPUT',{type:'pick',kind:'route',input:i.id,uid:i.uid},COLORS.nav,{glyph:'route'});
   a[22]=key('IP PROFILE',{type:'pick',kind:'inputProfile',input:i.id,uid:i.uid},COLORS.action,{disabled:i.canLive&&i.connected});
+  if(i.connected&&!i.isMojo&&i.remoteAccessAvailable)a[29]=key('REMOTE\nACCESS',{type:'remoteAccess',id:i.id,uid:i.uid},COLORS.nav,{icon:'Remote'});
   if(!i.isMojo&&i.connected&&i.liveProfiles?.length&&i.liveProfileInstance!==null)a[20]=key('LIVE PROFILE\n'+(i.liveProfiles.find(p=>p.id===i.liveProfileId)?.name||'SELECT'),{type:'pick',kind:'liveProfile',input:i.id,uid:i.uid},COLORS.nav);
   if(i.canCopyLink)a[28]=key('COPY LINK',{type:'pick',kind:'copyLink',asset:'input',input:i.id,uid:i.uid},COLORS.nav,{icon:'Link'});
   if(terminal&&i.intercomAvailable)a[26]=key('INTERCOM\n'+(i.intercom?'ON':'OFF'),{type:'intercom',id:i.id,uid:i.uid,enabled:!i.intercom},COLORS.tab,{icon:'Intercom',active:i.intercom===true,disabled:!i.connected||typeof i.intercom!=='boolean'});
@@ -184,7 +190,7 @@ function layout(s){
   }
  } if(s.view==='list'&&s.section!=='MOJO PRO'&&!s.outputBulk&&!s.inputBulk){
   a[15]=key(s.bulk?'EJECT\n'+s.bulk.length+' SELECTED':s.section==='INPUT'?'BULK\nUNASSIGN\n/ EJECT':'BULK\nEJECT',{type:s.bulk?'bulkRun':'bulkStart'},COLORS.nav,{disabled:!!s.bulk&&!s.bulk.length});
-  if(s.section==='INPUT'&&!s.bulk&&s.multiviewAvailable)a[13]=key('MULTIVIEW',{type:'multiview'},COLORS.nav);
+  if(s.section==='INPUT'&&!s.bulk&&s.multiviewAvailable)a[13]=key('MULTIVIEW',{type:'multiview'},COLORS.nav,{icon:'Multiview',iconPosition:'bottom'});
   if(s.section==='INPUT'&&!s.bulk)a[14]=key('BULK\nON / OFF',{type:'inputBulkStart'},COLORS.nav);
   if(s.section==='OUTPUT'&&!s.bulk){a[13]=key('BULK\nON / OFF',{type:'outputBulkStart',mode:'toggle'},COLORS.nav);a[14]=key('BULK\nUNASSIGN',{type:'outputBulkStart',mode:'unassign'},COLORS.nav);}
   if(s.bulk){

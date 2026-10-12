@@ -10,7 +10,7 @@ function broker(){let socket;const sessions=[],timers=[];
   dispose(){this.disposed=true;this.revision++;}
  }
  class Socket{constructor(){this.readyState=1;this.handlers={};this.sent=[];socket=this;}addEventListener(k,fn){this.handlers[k]=fn;}send(raw){this.sent.push(JSON.parse(raw));}}
- const local=createRequire(root+'/bin/plugin.js');vm.runInNewContext(fs.readFileSync(root+'/bin/plugin.js','utf8'),{require:n=>n==='./engine'?{Engine:Session}:local(n),process:{argv:['node','plugin','-port','1','-pluginUUID','plugin','-registerEvent','registerPlugin','-info',JSON.stringify({devices:[{id:'xl',type:2},{id:'small',type:0},{id:'mobile',type:3,size:{columns:8,rows:4}},{id:'mobile-small',type:3,size:{columns:5,rows:3}}]})],exit(){}},Buffer,WebSocket:Socket,setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){}});
+ const local=createRequire(root+'/bin/plugin.js');vm.runInNewContext(fs.readFileSync(root+'/bin/plugin.js','utf8'),{require:n=>n==='./engine'?{Engine:Session}:local(n),process:{argv:['node','plugin','-port','1','-pluginUUID','plugin','-registerEvent','registerPlugin','-info',JSON.stringify({devices:[{id:'xl',type:2},{id:'small',type:0},{id:'mobile',type:3,size:{columns:8,rows:4}},{id:'mobile-small',type:3,size:{columns:5,rows:3}}]})],exit(){}},Buffer,URL,WebSocket:Socket,setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){}});
  const send=m=>socket.handlers.message({data:JSON.stringify(m)}),settle=()=>new Promise(r=>setImmediate(r));
  const appear=(context,id='default',slot=7,device='xl',launcher=false)=>send({event:'willAppear',action:launcher?'org.streamhub.controller.open':'org.streamhub.controller.surface',context,device,payload:{coordinates:{row:Math.floor(slot/8),column:slot%8},settings:{slot,connectionId:id}}});
  const request=(context,type,extra={})=>send({event:'sendToPlugin',context,payload:{type,...extra}});
@@ -64,7 +64,7 @@ test('ADD STREAMHUB creates an empty independent entry and disconnect forgets on
 
 test('migration forgets access details of previously disconnected units and strips old password storage',async()=>{
  const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{address:'legacy-address',key:'legacy-key',previewPassword:'old-password',connections:{default:{name:'Forgotten',disconnected:true,address:'old-address',key:'old-key',previewUsername:'old-user',previewToken:'old-token',previewPassword:'old-password'},other:{name:'Keep',address:'192.0.2.2',key:'keep-key',previewPassword:'old-password'}}}}});
- const cfg=b.socket.sent.filter(m=>m.event==='setGlobalSettings').at(-1).payload;assert.deepEqual(Object.keys(cfg),['connections']);assert.ok(!JSON.stringify(cfg).includes('old-'));assert.equal(cfg.connections.other.key,'keep-key');assert.equal(cfg.connections.default.name,'Forgotten');
+ const cfg=b.socket.sent.filter(m=>m.event==='setGlobalSettings').at(-1).payload;assert.deepEqual(Object.keys(cfg),['connections','removedConnections']);assert.ok(!JSON.stringify(cfg).includes('old-'));assert.equal(cfg.connections.other.key,'keep-key');assert.equal(cfg.connections.default.name,'Forgotten');
 });
 
 test('Mobile 8 x 4 commands work and smaller Mobile layouts are rejected',async()=>{
@@ -91,4 +91,54 @@ test('ONLINE inspector recovers missing action context through settings without 
 });
 test('profile slot mapping keeps ONLINE at slot 7 when Mobile coordinates differ',async()=>{
  const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{}}});b.send({event:'willAppear',context:'online',device:'mobile',action:'org.streamhub.controller.surface',payload:{coordinates:{row:1,column:2},settings:{slot:7}}});b.request('online','status');assert.equal(b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload.configurationAllowed,true);
+});
+
+test('browser opening uses the Stream Deck API and reconnect does not rebind another inspector or forget credentials',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{a:{name:'Hub A',address:'192.0.2.1',key:'key-a',previewToken:'token-a'},b:{name:'Hub B',address:'192.0.2.2',key:'key-b'}}}}});b.appear('online-a','a',7,'xl');b.appear('online-b','b',7,'mobile');await b.settle();const a=b.sessions.find(e=>e.connectionId==='a'),other=b.sessions.find(e=>e.connectionId==='b');
+ a.options.openUrl('http://192.0.2.1:8888');assert.deepEqual(b.socket.sent.filter(m=>m.event==='openUrl').at(-1),{event:'openUrl',payload:{url:'http://192.0.2.1:8888/'}});
+ b.request('online-b','status');a.s.view='hub';await a.options.reconnect();await b.settle();assert.equal(a.disposed,true);assert.equal(other.disposed,undefined);assert.equal(b.sessions.at(-1).connectionId,'a');assert.equal(b.sessions.at(-1).s.view,'hub');assert.equal(b.sessions.at(-1).settings.previewToken,'token-a');
+ const report=b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload;assert.equal(report.connectionId,'b');assert.equal(report.connectionSettings.address,'192.0.2.2');assert.throws(()=>a.options.openUrl('http://192.0.2.1:8888'),/session changed/);
+});
+
+test('editing only a saved hub address carries a server-bound preview candidate and updates the effective web URL',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{default:{name:'Hub',address:'hub.example.test',key:'key',previewUsername:'admin',previewToken:'web-session',previewServerIdentity:{hardwareIdentifier:'hub-1'},previewOrigin:'https://hub.example.test'}}}}});b.appear('online');await b.settle();
+ b.request('online','configure',{connectionId:'default',requestId:'ip-edit',settings:{name:'Hub',address:'192.0.2.15',key:'key',previewUsername:'admin',previewOrigin:'https://hub.example.test',previewPassword:''}});await b.settle();const current=b.sessions.at(-1);assert.equal(current.settings.previewOrigin,'https://192.0.2.15');assert.equal(current.settings.previewSessionCandidate.token,'web-session');assert.equal(current.settings.previewToken,undefined);
+ let persisted=b.socket.sent.filter(m=>m.event==='setGlobalSettings').at(-1).payload;assert.equal(persisted.connections.default.previewSessionCandidate,undefined);assert.equal(persisted.connections.default.previewPassword,undefined);
+ current.options.onPreviewToken('web-session');current.options.onPreviewIdentity({hardwareIdentifier:'hub-1'});persisted=b.socket.sent.filter(m=>m.event==='setGlobalSettings').at(-1).payload;assert.equal(persisted.connections.default.previewToken,'web-session');assert.equal(persisted.connections.default.previewServerIdentity.hardwareIdentifier,'hub-1');
+ b.request('online','disconnect',{requestId:'forget'});await b.settle();persisted=b.socket.sent.filter(m=>m.event==='setGlobalSettings').at(-1).payload;assert.equal(persisted.connections.default.previewServerIdentity,undefined);assert.equal(persisted.connections.default.previewToken,undefined);
+});
+
+test('removing ONLINE leaves remaining controller keys responsive',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{a:{address:'192.0.2.1',key:'test'}}}}});b.appear('online','a');b.appear('asset','a',16);await b.settle();const e=b.sessions.at(-1);
+ b.send({event:'willDisappear',context:'online'});b.send({event:'keyDown',context:'asset'});await b.settle();assert.equal(e.commands.length,1);
+ b.appear('restored','a');b.request('restored','status');assert.equal(b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload.configurationAllowed,true);
+});
+test('deleting saved hubs removes access data and rebinds affected devices, including the last hub',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{a:{address:'192.0.2.1',key:'delete-secret'},b:{address:'192.0.2.2',key:'keep'}}}}});b.appear('online','a');b.appear('tablet','a',7,'mobile');await b.settle();const old=b.sessions.filter(e=>e.connectionId==='a');
+ b.request('online','deleteConnection',{requestId:'delete'});await b.settle();const saved=b.socket.sent.filter(m=>m.event==='setGlobalSettings').at(-1).payload.connections;assert.equal(saved.a,undefined);assert.equal(saved.b.key,'keep');assert.ok(old.every(e=>e.disposed));const report=b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload;assert.equal(report.connectionId,'b');assert.equal(report.connectionDeleted,true);
+ b.request('online','deleteConnection',{requestId:'last'});await b.settle();const last=b.socket.sent.filter(m=>m.event==='setGlobalSettings').at(-1).payload.connections;assert.equal(last.b,undefined);assert.equal(Object.keys(last).length,1);assert.ok(!Object.values(last)[0].key);
+});
+
+test('a stale page cannot resurrect a deleted StreamHub',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{a:{address:'192.0.2.1',key:'old'},b:{address:'192.0.2.2',key:'keep'}}}}});b.appear('online','a');await b.settle();b.request('online','deleteConnection');await b.settle();b.appear('stale','a',7,'mobile');await b.settle();b.request('stale','status');const report=b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload;assert.equal(report.connectionId,'b');assert.ok(!report.connections.some(c=>c.id==='a'));
+});
+test('invalid address does not leave a connection operation busy',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{default:{address:'192.0.2.1',key:'test'}}}}});b.appear('online');b.appear('asset','default',16);await b.settle();b.request('online','configure',{requestId:'invalid',settings:{address:'http://bad/path',key:'test'}});await b.settle();b.send({event:'keyDown',context:'asset'});await b.settle();assert.equal(b.sessions.at(-1).commands.length,1);
+});
+
+test('NEXT HUB cycles configured, disconnected and incomplete saved hubs',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{default:{name:'Primary',address:'192.0.2.1',key:'test'},draft:{name:'Draft'},offline:{name:'Offline',disconnected:true}}}}});b.appear('online');b.appear('next','default',5);await b.settle();
+ const current=()=>{b.request('online','status');return b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload.connectionId;};
+ b.send({event:'keyDown',context:'next'});await b.settle();assert.equal(current(),'draft');
+ b.send({event:'didReceiveSettings',context:'online',payload:{settings:{slot:7,connectionId:'default'}}});await b.settle();assert.equal(current(),'draft');
+ b.send({event:'keyDown',context:'next'});await b.settle();assert.equal(current(),'offline');b.send({event:'keyDown',context:'next'});await b.settle();assert.equal(current(),'default');
+ b.send({event:'willDisappear',context:'online'});b.send({event:'keyDown',context:'next'});await b.settle();b.request('next','status');assert.equal(b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload.connectionId,'draft');
+});
+
+test('OPEN occupying ONLINE in a populated controller becomes the connection anchor',async()=>{
+ const b=broker();b.send({event:'didReceiveGlobalSettings',payload:{settings:{connections:{default:{},a:{name:'Primary',address:'192.0.2.1',key:'test'},b:{name:'Second',address:'192.0.2.2',key:'other'}}}}});b.appear('open','a',7,'xl',true);b.appear('asset','default',16);b.appear('next','default',5);await b.settle();
+ b.request('open','status');let report=b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload;assert.equal(report.connectionId,'a');assert.equal(report.launcher,false);assert.equal(report.configurationAllowed,true);
+ b.send({event:'keyDown',context:'asset'});await b.settle();assert.equal(b.sessions.find(e=>e.connectionId==='a').commands.length,1);
+ b.send({event:'keyDown',context:'next'});await b.settle();b.request('open','status');report=b.socket.sent.filter(m=>m.event==='sendToPropertyInspector').at(-1).payload;assert.equal(report.connectionId,'b');
+ b.request('open','configure',{connectionId:'b',requestId:'save',settings:{name:'Edited',address:'192.0.2.3',key:'edited'}});await b.settle();assert.equal(b.sessions.at(-1).settings.address,'192.0.2.3');
 });
