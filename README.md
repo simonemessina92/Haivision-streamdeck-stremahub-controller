@@ -2,11 +2,11 @@
 
 Control a StreamHub from a Stream Deck XL or Stream Deck Mobile, using the same 32-key, 8 x 4 layout. Inputs, outputs, encoders and Mojo Pro each have their own section.
 
-The plugin includes video previews, source routing, recording, intercom, video return, camera controls and bulk actions. Controls appear according to what the connected StreamHub and devices support.
+The plugin includes video previews, source routing, recording, intercom, video return, camera controls, Multiview and bulk actions. Controls appear according to what the connected StreamHub and devices support.
 
 ## Download and install
 
-**[Download v0.14.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.14.0/haivision-streamdeck-streamhub-plugin-v0.14.0.zip)**
+**[Download v0.15.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.15.0/haivision-streamdeck-streamhub-plugin-v0.15.0.zip)**
 
 You need Windows 10 or later, Stream Deck app 7.1 or later, and either a **Stream Deck XL** or **Stream Deck Mobile configured with 32 keys in an 8 x 4 layout**.
 
@@ -35,6 +35,16 @@ Press **ADD STREAMHUB**, then configure the new unit from **ONLINE / OFFLINE** i
 
 **PAGE** moves between pages of inputs, outputs or encoders within the current unit.
 
+## Channel controls
+
+- **STATUS DETAILS** is available on inputs, outputs and encoders. CONFIG shows reported stream parameters, STATS shows available live measurements, and ALERTS shows errors and warnings. These pages are read-only.
+- **LIVE PROFILE** on a compatible connected transmitter selects an existing encoding preset. The current preset is highlighted; changing it does not start the input.
+- **MULTIVIEW**, beside input bulk controls, builds a 1 x 1 to 4 x 4 grid. Select sources across two pages of 16 inputs. Cell previews appear when their sources are live; BASIC hides the information overlays.
+- Route Multiview directly to SDI or NDI. IP routing requires an H.264 or HEVC encoder. Choose **ASSIGN ONLY** to keep the current power states, or **ASSIGN & GO LIVE** to enable the required channels.
+- Mojo Pro provides camera selection, manual/auto controls, fixed shutter steps, zoom reset and 2 dB audio gain steps. Microphone selection stays in the phone app.
+
+Available controls and statistics depend on the StreamHub version, license and connected device. Profile and routing changes wait for server or device confirmation.
+
 ## Saved access details
 
 The password is used to log in and is not saved. Stream Deck stores the address, API key, username and preview token locally so the plugin can reconnect after a restart.
@@ -43,7 +53,7 @@ The password is used to log in and is not saved. Stream Deck stores the address,
 
 ## Building from source
 
-`main` is the stable branch; `develop` is for ongoing work. Version **0.14.0** is the current stable release, verified with Stream Deck XL and two registered Mobile devices.
+`main` is the stable branch; `develop` is for ongoing work. Version **0.15.0** is the current stable release, verified with Stream Deck XL and two registered Mobile devices.
 
 Install Node.js 24, then run:
 

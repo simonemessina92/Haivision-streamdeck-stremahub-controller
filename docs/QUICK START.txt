@@ -1,4 +1,4 @@
-STREAMHUB XL — QUICK START — 0.14.0
+STREAMHUB XL — QUICK START — 0.15.0
 
 INSTALL
 Windows 10+, Stream Deck app 7.1+, Stream Deck XL or Stream Deck Mobile (32 keys, 8 columns x 4 rows).
@@ -28,6 +28,16 @@ NEXT HUB cycles configured units in this same panel, with no fixed unit limit.
 The unit name on ONLINE identifies the selected server.
 PAGE continues to page assets within the selected StreamHub.
 Existing saved units remain available; switching units retains their configuration.
+
+CHANNEL DETAILS AND MULTIVIEW
+STATUS DETAILS on inputs, outputs and encoders has CONFIG, STATS and ALERTS.
+Only reported values are shown; these pages do not edit stream profiles.
+LIVE PROFILE on compatible transmitters selects an existing preset without starting LIVE.
+MULTIVIEW builds a 1 x 1 to 4 x 4 grid; PAGE switches between two sets of 16 sources.
+Live inputs show cell previews. BASIC hides information overlays.
+SDI/NDI routing is direct; IP routing needs an H.264/HEVC encoder.
+ASSIGN ONLY preserves power state; ASSIGN & GO LIVE enables the required channels.
+Mojo microphone selection remains in the phone app.
 
 CREDENTIALS AND DISCONNECT
 Passwords are used only for login and are never written to plugin settings.

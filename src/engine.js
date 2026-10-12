@@ -1,5 +1,6 @@
 'use strict';
 const {layout,step}=require('./layout');
+const RCP=require('./rcp');
 const {demo}=require('./demo');
 const {Extra}=require('./rest-extra');
 const {NativePreviews}=require('./native-previews');
@@ -9,7 +10,11 @@ class Engine {
  constructor(createClient,notify=()=>{},fetchFn=globalThis.fetch,options={}){
   this.copyText=options.copyText||copyText;this.networkSignature=null;
   this.abortController=new AbortController();this.disposed=false;
-  const originalFetch=fetchFn;fetchFn=(url,options={})=>originalFetch(url,{...options,signal:options.signal?AbortSignal.any([options.signal,this.abortController.signal]):this.abortController.signal});
+  const originalFetch=fetchFn;fetchFn=(url,options={})=>{
+   const signals=[this.abortController.signal];if(options.signal)signals.push(options.signal);
+   if(this.refreshing&&this.refreshAbortController&&(!options.method||options.method==='GET'))signals.push(this.refreshAbortController.signal);
+   return originalFetch(url,{...options,signal:AbortSignal.any(signals)});
+  };
   this.createClient=createClient;this.notify=notify;this.fetch=fetchFn;this.values={};
   this.storage={get:async keys=>{if(typeof keys==='string')return {[keys]:this.values[keys]};if(Array.isArray(keys))return Object.fromEntries(keys.map(k=>[k,this.values[k]]));return {...this.values};},set:async values=>{if(!this.disposed)Object.assign(this.values,values);},remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete this.values[k];}};
   this.client=createClient(this.storage,fetchFn);this.extra=new Extra(()=>this.values.connection,fetchFn);this.cameraSentAt=new Map();this.cameraPending=new Map();
@@ -17,26 +22,34 @@ class Engine {
   this.stack=[];this.revision=0;this.refreshing=false;this.previewLoading=false;
   this.native=options.nativePreviews?new NativePreviews({
    fetchFn,onToken:options.onPreviewToken,
-   onStatus:status=>{this.s.previewStatus=status;this.applyDeviceRecording();this.emit();},onDevices:()=>{this.applyDeviceRecording();this.emit();},
-   onFrame:frame=>{if(frame.kind==='input')frame.uid=this.s.data.inputs.find(i=>i.id===frame.id)?.uid;this.useNativePreview();this.updateProgram();this.emit();}
+   onStatus:status=>{this.s.previewStatus=status;this.applyDeviceRecording();this.emit();},onDevices:()=>{this.applyDeviceRecording();this.syncMultiview();this.emit();},
+   onFrame:frame=>{this.applyDeviceRecording();if(frame.kind==='input')frame.uid=this.s.data.inputs.find(i=>i.id===frame.id)?.uid;this.useNativePreview();this.syncMultiviewPreviews();this.updateProgram();this.emit();}
   }):null;this.extra.native=this.native;
  }
  dispose(){clearTimeout(this.copiedTimer);this.disposed=true;this.revision++;this.abortController.abort();this.native?.stop();this.values={};this.cameraPending.clear();this.cameraSentAt.clear();this.s.online=false;this.s.busy=false;this.refreshing=false;this.commandQueue=Promise.resolve();}
  emit(){if(!this.disposed)this.notify(this.s);}
- keys(){return layout(this.s);}
+ keys(){this.applyChannelDetails();return layout(this.s);}
  async configure(settings){
   this.s.connectionName=String(settings.name||'').trim();
   if(this.s.busy||this.refreshing)throw Error('Wait for the current command before changing connection');
-  this.native?.stop();this.revision++;this.stack=[];this.s.selected=null;this.s.camera=null;this.s.preview=null;this.s.program=null;this.s.programIndex=0;this.s.view='list';this.s.page=0;this.s.error='';this.s.encoders=[];this.s.encoderCapacity=null;this.s.online=false;this.s.capabilities=null;this.s.bulk=null;this.s.outputBulk=null;this.s.inputBulk=null;this.s.demo=!!settings.demo;
+  this.native?.stop();this.revision++;this.stack=[];this.s.selected=null;this.s.camera=null;this.s.preview=null;this.s.program=null;this.s.programIndex=0;this.s.view='list';this.s.page=0;this.s.error='';this.s.encoders=[];this.s.encoderCapacity=null;this.s.online=false;this.s.capabilities=null;this.s.multiview=null;this.s.multiviewAvailable=false;this.s.multiviewError='';this.s.bulk=null;this.s.outputBulk=null;this.s.inputBulk=null;this.s.demo=!!settings.demo;
   this.values={};this.client=this.createClient(this.storage,this.fetch);
-  if(this.s.demo){const d=demo();this.demoCamera=d.camera;this.s.data=d.data;this.s.encoders=d.encoders;this.s.encoderCapacity=4;this.s.online=true;this.emit();return;}
+  if(this.s.demo){const d=demo();this.demoCamera=d.camera;this.s.data=d.data;this.s.encoders=d.encoders;this.s.encoderCapacity=4;this.s.online=true;this.s.multiview={rows:1,columns:1,cells:[0],enabled:false,overlay:true};this.s.multiviewAvailable=true;this.emit();return;}
   if(!settings.address||!settings.key){this.emit();return;}
   this.s.busy=true;this.emit();
-  try{const result=await this.client.handle({type:'connect',address:settings.address,key:settings.key});this.s.data=result.snapshot;this.s.online=true;await this.readEncoders();if(this.native)await this.native.start(this.values.connection,this.s.data.serverIdentity,settings);}
+  try{const result=await this.client.handle({type:'connect',address:settings.address,key:settings.key});this.s.data=result.snapshot;this.s.online=true;await this.readEncoders();await this.readMultiview(true);if(this.native)await this.native.start(this.values.connection,this.s.data.serverIdentity,settings);}
   catch(e){this.s.online=false;this.s.error=e.message;throw e;}
   finally{this.s.busy=false;this.emit();}
  }
+ applyChannelDetails(){
+  const model=require('./channel-details');
+  for(const input of this.s.data.inputs){const entry=this.native?.verified?this.native.details?.get('input:'+input.id,input.uid):null;input.liveStats=entry?model.statistics(entry.row):[];input.statsTime=entry?.time;if(!this.s.demo){const live=this.native?.liveProfiles?.(input.id,input.uid);input.liveProfiles=live?.profiles||[];input.liveProfileId=live?.current??null;input.liveProfileInstance=live?.instance??null;}const info=this.native?.verified?this.native.details?.get('inputInfo:'+input.id,input.uid):null;if(info)input.streamDetails=model.configuration(info.row,...(this.native?.channels?.[input.id-1]?.hardwareIdentifier===input.uid?[this.native.channels[input.id-1]]:[]));}
+  for(const output of this.s.data.outputs){const entry=this.native?.verified?this.native.details?.get(output.type+':'+(output.configIndex??output.id)):null;output.liveStats=entry?model.statistics(entry.row):[];output.statsTime=entry?.time;const info=this.native?.verified?this.native.details?.get('outputInfo:'+output.type+':'+(output.configIndex??output.id)):null;if(info)output.streamDetails=model.configuration(info.row);}
+  for(const encoder of this.s.encoders){const entry=this.native?.verified?this.native.details?.get('encoder:'+encoder.id):null,status=this.native?.verified?this.native.details?.get('encoderStatus:'+encoder.id):null;encoder.liveStats=entry?model.statistics(entry.row):[];encoder.statsTime=entry?.time;if(status)encoder.streamDetails=model.configuration(status.row);if(status){encoder.status=Number(status.row.status);encoder.message=status.row.message||'';}}
+
+ }
  applyDeviceRecording(){
+  this.applyChannelDetails();
   for(const input of this.s.data.inputs){
    const features=this.native?.features?.(input.id,input.uid);
    if(!this.s.demo)Object.assign(input,features||{nativeDiagnostic:undefined,intercomAvailable:false,intercom:null,returnCapability:0,returnEncoder:null,returnSource:null});
@@ -81,24 +94,53 @@ class Engine {
   }catch{if(revision===this.revision&&selection===this.previewSelection()){this.s.preview=null;this.emit();}}
   finally{this.previewLoading=false;}
  } async discover(){try{const d=await this.client.handle({type:'mojoDiscover'});for(const i of d.inputs){const row=this.s.data.inputs.find(x=>x.id===i.id&&x.uid===i.uid);if(row)row.isMojo=true;}}catch{/* Discovery is optional; core snapshot remains valid. */}}
+ syncMultiviewPreviews(){
+  const active=this.s.view==='multiview',ids=active&&this.s.multiview?[...new Set(this.s.multiview.cells)].filter(id=>this.s.data.inputs.some(i=>i.id===id&&i.connected&&i.status===2)):[];
+  if(active)this.native?.selectInputs?.(ids);
+  this.s.multiviewFrames={};for(const id of ids){const input=this.s.data.inputs.find(i=>i.id===id),frame=this.native?.get?.('input',id);if(frame&&(!frame.uid||frame.uid===input.uid))this.s.multiviewFrames[id]=frame;}
+ }
+ syncMultiview(){
+  if(!this.native?.verified)return;
+  const license=this.native.license?.license||this.native.license;
+  if([false,0,'0'].includes(license?.multiView)){this.s.multiviewAvailable=false;this.s.multiview=null;return;}
+  if(this.native.config?.mosaic)try{this.s.multiview=require('./multiview').decode(this.native.config.mosaic);this.s.multiviewAvailable=true;this.s.multiviewError='';this.syncMultiviewPreviews();}catch{}
+ }
+ async readMultiview(quiet=false){
+  if(this.s.demo)return this.s.multiview;
+  const license=this.native?.license?.license||this.native?.license;
+  if([false,0,'0'].includes(license?.multiView)){this.s.multiviewAvailable=false;this.s.multiview=null;if(!quiet)throw Error('Multiview is not licensed on this StreamHub');return;}
+  try{this.s.multiview=require('./multiview').decode(await this.extra.config('mosaic'));this.s.multiviewAvailable=true;this.s.multiviewError='';this.syncMultiviewPreviews();return this.s.multiview;}
+  catch(error){this.syncMultiview();if(this.s.multiviewAvailable&&this.s.multiview)return this.s.multiview;this.s.multiviewAvailable=false;this.s.multiviewError=error.message;if(!quiet)throw error;}
+ }
+ async changeMultiview(operation){
+  if(!this.s.multiviewAvailable)throw Error('Multiview is unavailable on this StreamHub');
+  if(operation.kind==='cell'&&operation.input)this.checkInput(operation.input,operation.uid);
+  try{await this.mutate(async()=>{
+   if(this.s.demo){const model=require('./multiview'),old=this.s.multiview,config={nbRow:old.rows,nbCol:old.columns,videoChannelIndexes:JSON.stringify(old.cells),enable:old.enabled,showOverlayInfo:old.overlay};this.s.multiview=model.decode({...config,...model.patch(config,operation)});}
+   else this.s.multiview=await this.native.setMultiview(operation,this.extra);
+  });this.s.multiviewError='';}catch(error){this.s.multiviewError=error.message;this.emit();throw error;}this.emit();
+ }
  async readEncoders(){try{this.s.encoders=await this.extra.snapshot();this.s.encoderCapacity=this.extra.capacity;this.s.capabilities=this.extra.metadata;this.s.encoderError='';}catch(e){this.s.encoders=[];this.s.encoderCapacity=null;this.s.encoderError=e.message;}}
  async syncNetwork(){
   if(!this.native?.verified||!this.native.network||!this.values.connection)return;
   const signature=JSON.stringify(this.native.network);if(signature===this.networkSignature)return;
   await this.client.handle({type:'nativeNetwork',base:this.values.connection.base,network:this.native.network});this.networkSignature=signature;
  }
+ interruptRefresh(){if(this.refreshing){this.refreshCancelled=true;this.refreshAbortController?.abort();}}
  async refresh(){
   if(this.refreshing||this.s.busy||this.s.demo||!this.values.connection)return;
-  this.refreshing=true;
+  this.refreshing=true;this.refreshCancelled=false;this.refreshAbortController=new AbortController();
   try{
-   await this.syncNetwork();const d=await this.client.handle({type:'snapshot',fresh:true});this.s.data=d;this.applyDeviceRecording();this.updateProgram();this.s.online=true;this.s.error='';
+   await this.syncNetwork();const d=await this.client.handle({type:'snapshot',fresh:true});if(this.refreshCancelled)return;this.s.data=d;this.applyDeviceRecording();this.updateProgram();this.s.online=true;this.s.error='';
    if(this.s.view==='input'&&this.native?.verified&&this.native.readReturnConfig)await this.native.readReturnConfig(this.extra);
-   if(this.s.section==='ENCODERS')await this.readEncoders();
+   if(this.s.section==='ENCODERS')await this.readEncoders();this.applyDeviceRecording();
+   if(this.s.view==='multiview'||this.s.picker?.kind==='multiviewInput'){try{await this.readMultiview();}catch(e){this.s.multiviewError=e.message;}}
    if(this.s.view==='mojo'){
     const i=d.inputs.find(i=>i.id===this.s.selected.id&&i.uid===this.s.selected.uid);
     if(!i){this.s.error='Selected camera source is temporarily unavailable';}else{
      try{
       const camera=await this.client.handle({type:'mojoGet',input:i.id});
+      if(this.refreshCancelled)return;
       if(camera.deviceUID!==this.s.selected.uid)throw Error('Camera identity changed');
       const old=this.s.camera;
       if(old&&old.settings.camera===camera.settings.camera){
@@ -116,14 +158,14 @@ class Engine {
        }
       }
       this.s.camera=camera;
-     }catch(e){this.s.error=e.message;}
+     }catch(e){if(!this.refreshCancelled)this.s.error=e.message;}
     }
    }
-  }catch(e){this.s.online=false;this.s.error=e.message;}
-  finally{this.refreshing=false;this.emit();}
+  }catch(e){if(!this.refreshCancelled){this.s.online=false;this.s.error=e.message;}}
+  finally{this.refreshing=false;this.refreshAbortController=null;this.emit();}
  }
  push(view,selected=this.s.selected){this.stack.push({view:this.s.view,selected:this.s.selected,page:this.s.page,picker:this.s.picker});this.s.view=view;this.s.selected=selected;this.s.page=0;}
- back(){const old=this.stack.pop();if(old)Object.assign(this.s,old);else{this.s.view='list';this.s.selected=null;this.s.page=0;}this.native?.selectInput(['input','mojo'].includes(this.s.view)?this.s.selected?.id:null);this.emit();}
+ back(){const old=this.stack.pop();if(old)Object.assign(this.s,old);else{this.s.view='list';this.s.selected=null;this.s.page=0;}this.native?.selectInput(['input','mojo'].includes(this.s.view)?this.s.selected?.id:null);this.syncMultiviewPreviews();this.emit();}
  checkInput(id,uid){const row=this.s.data.inputs.find(i=>i.id===id&&i.uid===uid);if(!row)throw Error('Source identity changed');return row;}
  async mutate(task){
   if(this.s.busy||this.refreshing)throw Error('Wait for the current read or command to finish');
@@ -145,6 +187,17 @@ class Engine {
   if(c.type==='refresh'){await this.refresh();return;}
   if(!this.s.online)throw Error('StreamHub is disconnected');
   if(this.s.busy||this.refreshing)throw Error('Wait for the current command to finish');
+  if(c.type==='multiview'){
+   if(!this.s.demo)await this.mutate(()=>this.readMultiview());
+   if(!this.s.multiviewAvailable)throw Error('Multiview is unavailable');
+   this.s.bulk=null;this.s.inputBulk=null;this.push('multiview',null);this.native?.selectInput(null);this.syncMultiviewPreviews();this.emit();return;
+  }
+  if(c.type==='multiviewRefresh'){await this.mutate(()=>this.readMultiview());this.emit();return;}
+  if(c.type==='multiviewChange'){await this.changeMultiview(c.operation);this.syncMultiviewPreviews();return;}
+  if(c.type==='multiviewRouteGroup'){const p=this.s.picker;if(p?.kind!=='multiviewRoute'||!require('./outputs').supportedGroups(this.s).includes(c.group))return;p.group=c.group;this.s.page=0;this.emit();return;}
+  if(c.type==='multiviewRouteConfirm'){if(this.s.picker?.kind==='multiviewRoute'&&this.s.picker.selectedKeys.length)this.s.picker.decision=true;this.emit();return;}
+  if(c.type==='multiviewRouteReview'){if(this.s.picker?.kind==='multiviewRoute')this.s.picker.decision=false;this.emit();return;}
+  if(c.type==='multiviewRouteApply'){await this.applyMultiviewRoutes(!!c.goLive);return;}
   if(c.type==='outputGroup'){
    if(!require('./outputs').supportedGroups(this.s).includes(c.group))throw Error('This output type is unavailable on this StreamHub');
    this.stack=[];this.s.section='OUTPUT';this.s.outputGroup=c.group;this.s.view='list';this.s.selected=null;this.s.page=0;this.emit();return;
@@ -162,7 +215,8 @@ class Engine {
   if(c.type==='bulkSelect'){this.s.bulkConfirm=null;const k=JSON.stringify(c.command),b=this.s.bulk||[];this.s.bulk=b.some(x=>JSON.stringify(x)===k)?b.filter(x=>JSON.stringify(x)!==k):[...b,c.command];this.emit();return;}
   if(c.type==='bulkRun'){await this.bulkEject(c.confirmed);return;}
   if(c.type==='asset'){await this.cycleAsset(c.delta);return;}
-  if(c.type==='diagnostic'){this.push('diagnostic',{...this.s.selected,asset:c.asset});this.emit();return;}
+  if(c.type==='detailsTab'){if(this.s.view!=='diagnostic'||!['CONFIG','STATS','ALERTS'].includes(c.tab))return;this.s.detailsTab=c.tab;this.s.page=0;this.emit();return;}
+  if(c.type==='diagnostic'){const selected=this.s.selected;const item=c.asset==='output'?this.s.data.outputs.find(o=>o.key===selected.key):c.asset==='encoder'?this.s.encoders.find(e=>e.id===selected.id):this.s.data.inputs.find(i=>i.id===selected.id&&i.uid===selected.uid);this.push('diagnostic',{...selected,asset:c.asset});this.s.detailsTab=require('./diagnostics').diagnostic(item,c.asset)||this.s.commandError?'ALERTS':'CONFIG';this.applyDeviceRecording();this.emit();return;}
   if(c.type==='program'){this.s.programIndex=(this.s.programIndex||0)+1;this.updateProgram();this.emit();return;}
   if(c.type==='addOutput'){await this.addOutput(c.group);return;}
   if(c.type==='ejectOutput'&&this.s.demo){const output=this.s.data.outputs.find(o=>o.key===c.key);if(!output||!canEjectOutput(this.s.data,output))throw Error('Eject the highest-numbered physical or NDI output first');}
@@ -250,6 +304,29 @@ class Engine {
  }
  async openPicker(c){
   const items=[];
+  if(c.kind==='liveProfile'){
+   const input=this.checkInput(c.input,c.uid);this.applyChannelDetails();
+   if(input.isMojo||!input.connected||!input.liveProfiles?.length||input.liveProfileInstance===null)throw Error('Transmitter live profiles are unavailable');
+   for(const profile of input.liveProfiles)items.push({title:profile.name+'\n'+(profile.id===input.liveProfileId?'CURRENT':''),active:profile.id===input.liveProfileId,command:{type:'liveProfile',input:input.id,uid:input.uid,profile:profile.id,instance:input.liveProfileInstance}});
+  }
+  if(c.kind==='multiviewRoute'){
+   if(!this.s.multiviewAvailable)throw Error('Multiview unavailable');
+   if(!this.s.demo)await this.mutate(async()=>{await this.readMultiview();await this.readEncoders();this.s.data=await this.client.handle({type:'snapshot',fresh:true});});
+  }
+  if(c.kind==='multiviewEncoder'){
+   if(this.s.picker?.kind!=='multiviewRoute'||this.s.picker.group!=='IP')throw Error('Open Multiview IP routing first');
+   for(const e of this.s.encoders)if(e.profile!=='-1'){
+    const codec=String(this.extra.profiles?.[e.profile]?.encoderVideoType||'').replace(/[^a-z0-9]/gi,'');
+    const allowed=this.s.demo||/^(H264|H265|HEVC)$/i.test(codec);
+    items.push({title:'ENC '+e.id+'\n'+e.name+'\n'+(e.enabled&&e.input!==33?'STOP FIRST':allowed?'H264 / HEVC':'UNSUPPORTED'),disabled:!allowed||e.enabled&&e.input!==33,command:{type:'multiviewEncoder',encoder:e.id}});
+   }
+  }
+  if(c.kind==='multiviewInput'){
+   if(!this.s.multiview||!Number.isInteger(c.cell)||c.cell<0||c.cell>=this.s.multiview.cells.length)throw Error('Multiview cell unavailable');
+   const expected=require('./multiview').fingerprint(this.s.multiview);
+   items.push({title:'CLEAR\nCELL',command:{type:'multiviewInput',cell:c.cell,input:0,expected}});
+   for(const i of this.s.data.inputs)if(i.id>=1&&i.id<=32)items.push({title:''+i.id+'\n'+i.name+'\n'+(i.status===2?'LIVE':i.connected?'READY':'NOT READY'),command:{type:'multiviewInput',cell:c.cell,input:i.id,uid:i.uid,expected}});
+  }
   if(c.kind==='copyLink'){
    if(!this.s.demo)await this.mutate(async()=>{await this.syncNetwork();this.s.data=await this.client.handle({type:'snapshot',fresh:true});});
    const row=c.asset==='input'?this.checkInput(c.input,c.uid):this.s.data.outputs.find(o=>o.key===c.key&&o.type==='IP');
@@ -293,15 +370,32 @@ class Engine {
   }
   if(c.kind==='shutterUnits')for(const [unit,title]of [['denominator','1 / denominator'],['seconds','Seconds'],['microseconds','Microseconds']])items.push({title,active:unit===this.s.camera.profile.shutterUnit,command:{type:'shutterUnits',unit}});
   if(c.kind==='camera')for(const name of this.s.camera?.cameras.names||[])items.push({title:name,active:name===this.s.camera.settings.camera,command:{type:'camera',camera:name}});
-  this.push('pick');this.s.picker={kind:c.kind,items,readiness:'READY',...(c.kind==='route'?{input:c.input,uid:c.uid,selectedKeys:[],group:require('./outputs').supportedGroups(this.s)[0]}:{})};this.emit();
+  this.push('pick');this.s.picker={kind:c.kind,items,readiness:'READY',...(c.kind==='multiviewRoute'?{group:require('./outputs').supportedGroups(this.s)[0],selectedKeys:[],encoder:null}:{}),...(c.kind==='route'?{input:c.input,uid:c.uid,selectedKeys:[],group:require('./outputs').supportedGroups(this.s)[0]}:{})};this.emit();
  }
  async choose(item){
   const c=item.command;if(item.disabled)return;
+  if(c.type==='multiviewRouteSelect'){
+   const p=this.s.picker,o=this.s.data.outputs.find(o=>o.key===c.key);
+   if(p?.kind!=='multiviewRoute'||!o||o.locked||!o.powerAvailable||outputGroup(o)==='IP'&&!p.encoder)throw Error('Output unavailable');
+   if(outputGroup(o)==='IP'?o.encoder===p.encoder&&this.s.encoders.some(e=>e.id===p.encoder&&e.input===33):o.source===33)return;
+   p.selectedKeys=p.selectedKeys.includes(c.key)?p.selectedKeys.filter(key=>key!==c.key):[...p.selectedKeys,c.key];this.emit();return;
+  }
+  if(c.type==='multiviewEncoder'){
+   this.back();if(this.s.picker?.kind!=='multiviewRoute')throw Error('Multiview routing closed');this.s.picker.encoder=c.encoder;this.s.picker.selectedKeys=this.s.picker.selectedKeys.filter(key=>outputGroup(this.s.data.outputs.find(o=>o.key===key))!=='IP');this.emit();return;
+  }
+  if(c.type==='multiviewInput'){await this.changeMultiview({kind:'cell',cell:c.cell,input:c.input,uid:c.uid,expected:c.expected});this.back();return;}
   if(c.type==='route'){
    const picker=this.s.picker;if(this.s.view!=='pick'||picker?.kind!=='route')throw Error('Open ROUTE TO OUTPUT first');
    const output=this.s.data.outputs.find(o=>o.key===c.key);if(output?.source===picker.input)return;
    if(!picker.items.some(entry=>entry.command?.key===c.key&&!entry.disabled))throw Error('Output unavailable');
    picker.selectedKeys=picker.selectedKeys.includes(c.key)?picker.selectedKeys.filter(key=>key!==c.key):[...picker.selectedKeys,c.key];this.emit();return;
+  }
+  if(c.type==='liveProfile'){
+   const input=this.checkInput(c.input,c.uid);
+   if(this.s.view!=='pick'||this.s.picker?.kind!=='liveProfile'||!this.s.picker.items.some(p=>p.command.profile===c.profile&&p.command.uid===c.uid&&p.command.instance===c.instance))throw Error('Reopen LIVE PROFILE before selecting a preset');
+   if(this.s.demo){if(!input.liveProfiles?.some(p=>p.id===c.profile))throw Error('Profile unavailable');input.liveProfileId=c.profile;}
+   else await this.mutate(async()=>{await this.native.setLiveProfile(c.input,c.uid,c.profile,c.instance);this.applyChannelDetails();});
+   this.back();return;
   }
   if(c.type==='copyLink'){
    const revision=this.revision;
@@ -336,6 +430,30 @@ class Engine {
    if(c.type==='outputAdd')return this.client.handle({type:'outputAdd',key:c.key});
   });
   if(this.s.demo)this.syncDemoOutputs();this.back();
+ }
+ async applyMultiviewRoutes(goLive){
+  const p=this.s.picker;if(p?.kind!=='multiviewRoute')return;
+  const keys=[...p.selectedKeys],all=p.activationKeys||keys;if(!all.length)return;
+  if(goLive)p.activationKeys=[...all];
+  await this.mutate(async()=>{
+   const targets=keys.map(key=>this.s.data.outputs.find(o=>o.key===key));if(targets.some(o=>!o||o.locked||!o.powerAvailable))throw Error('Output changed; review the selection');
+   if(targets.some(o=>outputGroup(o)==='IP')&&!p.encoder)throw Error('Select an encoder for IP routing');
+   if(this.s.demo){
+    if(targets.some(o=>outputGroup(o)==='IP')){const enc=this.s.encoders.find(e=>e.id===p.encoder);if(!enc||enc.enabled&&enc.input!==33)throw Error('Stop the encoder first');enc.input=33;}
+    for(const o of targets){if(outputGroup(o)==='IP'){o.source=null;o.encoder=p.encoder;}else{o.source=33;o.encoder=null;}}p.selectedKeys=[];
+   }else if(targets.length)await this.native.routeMultiview(targets,p.encoder,this.extra,confirmed=>{p.selectedKeys=p.selectedKeys.filter(key=>!confirmed.includes(key));});
+   if(goLive){
+    if(this.s.demo){this.s.multiview.enabled=true;if(all.some(key=>outputGroup(this.s.data.outputs.find(o=>o.key===key))==='IP'))this.s.encoders.find(e=>e.id===p.encoder).enabled=true;for(const key of all)this.s.data.outputs.find(o=>o.key===key).enabled=true;p.activationKeys=[];}
+    else{
+     this.s.data=await this.client.handle({type:'snapshot',fresh:true});
+     for(const key of all){const o=this.s.data.outputs.find(o=>o.key===key);if(!o||o.locked||(outputGroup(o)==='IP'?o.encoder!==p.encoder:o.source!==33))throw Error('Multiview routing changed; GO LIVE stopped');}
+     this.s.multiview=await this.native.setMultiview({kind:'power',enabled:true},this.extra);
+     if(all.some(key=>outputGroup(this.s.data.outputs.find(o=>o.key===key))==='IP')){const slot=await this.extra.slot(p.encoder);if(Number(slot.inputIndex)!==32)throw Error('Encoder source changed');const codec=String(this.extra.profiles[slot.encoderProfileId]?.encoderVideoType||'').replace(/[^a-z0-9]/gi,'');if(!/^(H264|H265|HEVC)$/i.test(codec))throw Error('Encoder profile changed');await this.extra.power(p.encoder,true);await this.readEncoders();}
+     for(const key of [...p.activationKeys]){const o=this.s.data.outputs.find(o=>o.key===key);await this.native.setConfigRows(o.root,[o.configIndex],{enable:true},this.extra);p.activationKeys=p.activationKeys.filter(k=>k!==key);}
+    }
+   }
+   if(!this.s.demo)this.s.data=await this.client.handle({type:'snapshot',fresh:true});
+  });this.back();
  }
  async confirmRoutes(goLive=false){
   const picker=this.s.picker;if(this.s.view!=='pick'||picker?.kind!=='route'||!picker.selectedKeys.length&&!picker.activationKeys?.length)return;
@@ -447,15 +565,10 @@ class Engine {
 }
  updateProgram(){
  if(this.s.view!=='mojo'){this.s.program=null;return;}
- const paths=require('./assets').programRoutes(this.s);
- if(!paths.length){this.s.program=null;return;}
- this.s.programIndex=(this.s.programIndex||0)%paths.length;
- const output=paths[this.s.programIndex],group=outputGroup(output);
- let frame=null,label=group+' '+output.id;
- if(group==='SDI'||group==='NDI')frame=this.native?.get(group,output.id);
- else if(output.encoder){frame=this.native?.get('encoder',output.encoder);label='ENC '+output.encoder;}
- // A passthrough IP source thumbnail is not an output confidence image.
- this.s.program={key:output.key,label,frame,selection:this.previewSelection(),count:paths.length};
+ const source=this.s.data.inputs.find(i=>i.id===this.s.selected?.id&&i.uid===this.s.selected?.uid);
+ if(!source){this.s.program=null;return;}
+ const routes=this.s.data.outputs.filter(o=>o.source===source.id||o.encoder&&this.s.encoders.some(e=>e.id===o.encoder&&e.input===source.id));
+ this.s.program=routes.length?{live:source.connected&&source.status===2&&routes.some(o=>o.enabled&&(o.source===source.id||this.s.encoders.some(e=>e.id===o.encoder&&e.input===source.id&&e.enabled))),selection:this.previewSelection()}:null;
 }
  async cameraCommand(c){
  const input=this.s.selected;this.checkInput(input.id,input.uid);
@@ -469,8 +582,14 @@ class Engine {
   const candidate=needsManual?{...camera,settings:{...camera.settings,[p]:{...row,[p+'Mode']:manual}}}:camera;
   const value=step(candidate,p,c.delta);if(value===row[p]&&!needsManual)return;
   patch={[p]:{[p]:value,...(needsManual?{[p+'Mode']:manual}:{})}};
+ }else if(['Zoom','AudioGain'].includes(p)){
+  const bounds=RCP.bounds(p,row,camera.profile),value=p==='Zoom'?bounds?.[0]:0;
+  if(!bounds||!Number.isFinite(row[p])||!Number.isFinite(value)||value<bounds[0]||value>bounds[1])throw Error('Reset value unavailable for '+p);
+  const manual=(row[p+'Modes']||[]).find(m=>/^(manual|off|locked)$/i.test(String(m)));
+  if(String(row[p+'Mode']||'').toLowerCase()==='auto'&&manual===undefined)throw Error('Manual mode unavailable for '+p);
+  patch={[p]:{[p]:RCP.toApi(p,value,camera.profile),...(manual!==undefined?{[p+'Mode']:manual}:{})}};
  }else{
-  const modes=row[p+'Modes'];if(!Array.isArray(modes)||modes.length<2)throw Error('Modes unavailable');
+  const modes=RCP.modes(p,row);if(!Array.isArray(modes)||modes.length<2)throw Error('Modes unavailable');
   patch={[p]:{[p+'Mode']:modes[(modes.indexOf(row[p+'Mode'])+1)%modes.length]}};
  }
  Object.assign(row,patch[p]);this.cameraPending.set(p,{...patch[p]});this.cameraSentAt.set(p,Date.now());this.emit();

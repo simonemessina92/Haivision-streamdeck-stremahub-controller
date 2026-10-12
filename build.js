@@ -6,7 +6,7 @@ fs.mkdirSync(path.join(out, 'images'), {recursive:true});
 fs.mkdirSync(path.join(out, 'profiles'), {recursive:true});
 // The REST client and camera model are part of this standalone project.
 for(const name of ['client.js','rcp.js'])fs.copyFileSync(path.join(root,'src',name),path.join(out,'bin',name));
-for (const name of ['plugin.js','layout.js','engine.js','hold.js','demo.js','rest-extra.js','render.js','native-previews.js','outputs.js','bulk.js','camera-control.js','assets.js','clipboard.js','diagnostics.js']) fs.copyFileSync(path.join(root,'src',name),path.join(out,'bin',name));
+for (const name of ['plugin.js','layout.js','engine.js','hold.js','demo.js','rest-extra.js','render.js','native-previews.js','outputs.js','bulk.js','camera-control.js','assets.js','clipboard.js','diagnostics.js','multiview.js','channel-details.js']) fs.copyFileSync(path.join(root,'src',name),path.join(out,'bin',name));
 fs.copyFileSync(path.join(root,'src/inspector.html'),path.join(out,'inspector.html'));
 function crc32(b) {let crc=0xffffffff;for(const v of b){crc^=v;for(let k=0;k<8;k++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
 function png(size) {
@@ -20,7 +20,7 @@ for(const [name,size] of [['plugin',256],['plugin@2x',512],['category',28],['cat
 for(const name of ['plugin','plugin@2x','category','category@2x','action','action@2x'])fs.copyFileSync(path.join(root,'src/images',name+'.png'),path.join(out,'images',name+'.png'));
 const manifest={
  Author:'StreamHub Controller Project',Name:'Haivision StreamHub Controller',Description:'Independent controller for Haivision StreamHub on Stream Deck XL and Stream Deck Mobile with a 32-key 8 x 4 layout. Control inputs, outputs, encoders and Mojo Pro devices, monitor previews, route sources and switch saved StreamHubs from one complete 32-key panel.',
- Version:'0.14.0.2',SDKVersion:2,CodePath:'bin/plugin.js',Nodejs:{Version:'24'},
+ Version:'0.15.0.9',SDKVersion:2,CodePath:'bin/plugin.js',Nodejs:{Version:'24'},
  Software:{MinimumVersion:'7.1'},OS:[{Platform:'windows',MinimumVersion:'10'}],
  Icon:'images/plugin',Category:'Haivision StreamHub Controller',CategoryIcon:'images/category',UUID:'org.streamhub.controller',
  Actions:[{UUID:'org.streamhub.controller.surface',Name:'StreamHub XL surface',VisibleInActionsList:false,Icon:'images/action',Controllers:['Keypad'],PropertyInspectorPath:'inspector.html',

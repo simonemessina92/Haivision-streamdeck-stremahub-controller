@@ -120,7 +120,7 @@ test('a stale encoder add cannot replace an assigned profile',async()=>{
 test('black backgrounds, navigation gutters and separate camera pages',async()=>{
  const {svg}=require(root+'/render'),e=new Engine(createClient,()=>{},()=>{throw Error('Network in demo');});await e.configure({demo:true});
  let keys=e.keys();assert.equal(keys[7].kind,'status');assert.match(svg(keys[0]),/fill="#000000"/);assert.match(svg(keys[14]),/fill="#000000"/);assert.equal(keys[14].command.type,'inputBulkStart');
- await e.execute({type:'mojo',id:1,uid:'demo-0'});keys=e.keys();assert.equal(keys[14].blank,true);assert.equal(keys[10].command.param,'WB');assert.equal(keys[26].command.param,'ShutterSpeed');assert.equal(keys[25].kind,'preview');assert.equal(keys[9].kind,'preview');
+ await e.execute({type:'mojo',id:1,uid:'demo-0'});keys=e.keys();assert.equal(keys[14].blank,true);assert.equal(keys[10].command.param,'WB');assert.equal(keys[26].command.param,'ShutterSpeed');assert.equal(keys[25].kind,'preview');assert.equal(keys[9].kind,'status');
  await e.execute(keys[6].command);assert.equal(e.keys()[10].command.param,'Zoom');assert.equal(e.keys()[26].command.param,'AudioGain');
 });
 
@@ -197,7 +197,7 @@ test('UNIT REC native readback survives REST refresh and never invokes hub recor
  await e.refresh();assert.equal(e.s.data.inputs[0].deviceRecording,true);assert.match(e.keys()[18].title,/ON/);
  assert.equal(f.requests.some(r=>r.path.includes('/streamhubRecord/')),false);assert.ok(f.requests.some(r=>r.path==='/inputs/1/record/start'));
  await e.execute(e.keys()[18].command);assert.equal(e.s.data.inputs[0].deviceRecording,false);
- e.s.data.inputs[0].connected=false;assert.equal(e.keys()[18].disabled,true);
+ e.s.data.inputs[0].connected=false;assert.equal(e.keys()[18].blank,true);
  await assert.rejects(e.execute({type:'record',id:1,uid:'unit-0',endpoint:'record',enabled:true}),/disconnected/);assert.equal(sent,2);
 });
 test('output filters show only their group and preserve selection after opening details',async()=>{
@@ -362,7 +362,7 @@ test('camera increments follow ISO thirds of a stop and exact WB, zoom, focus an
  c.settings.ISO.ISO=100;c.settings.ISO.ISOMode='Manual';assert.equal(step(c,'ISO',1),125);c.settings.ISO.ISO=125;assert.equal(step(c,'ISO',-1),100);
  assert.equal(step(c,'WB',1),5700);assert.equal(step(c,'Zoom',1),1.1);
  c.settings.Focus.Focus=.5;c.settings.Focus.FocusMode='Manual';assert.equal(step(c,'Focus',1),.51);
- c.settings.AudioGain.AudioGain=0;assert.equal(step(c,'AudioGain',-1),-1);
+ c.settings.AudioGain.AudioGain=0;assert.equal(step(c,'AudioGain',-1),-2);
 });
 
 test('WB, ISO and shutter stay independent when a camera replaces omitted parameters',async()=>{
@@ -403,11 +403,11 @@ test('delayed camera readback cannot restore another parameters previous automat
  const writes=f.requests.filter(r=>r.path.includes('cameraSettings')&&r.method==='POST');
  assert.equal(writes.length,3);assert.equal(writes[2].body.WB.WBMode,'OFF');assert.equal(writes[2].body.ISO.ISOMode,'OFF');
 });
-test('parameter icon cycles every reported mode and plus switches that parameter to manual',async()=>{
+test('WB icon cycles manual and auto only and plus switches that parameter to manual',async()=>{
  const e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'mojo',id:1,uid:'demo-0'});
  e.s.camera.settings.WB.WBModes=['Manual','Auto','Locked'];
  const iso=structuredClone(e.s.camera.settings.ISO),shutter=structuredClone(e.s.camera.settings.ShutterSpeed);
- for(const mode of ['Auto','Locked','Manual']){await e.execute(e.keys()[11].command);assert.equal(e.s.camera.settings.WB.WBMode,mode);}
+ for(const mode of ['Auto','Manual','Auto','Manual']){await e.execute(e.keys()[11].command);assert.equal(e.s.camera.settings.WB.WBMode,mode);}
  await e.execute(e.keys()[11].command);await e.execute(e.keys()[12].command);assert.equal(e.s.camera.settings.WB.WBMode,'Manual');
  assert.deepEqual(e.s.camera.settings.ISO,iso);assert.deepEqual(e.s.camera.settings.ShutterSpeed,shutter);
 });
@@ -432,14 +432,15 @@ test('Mojo asset arrows retain the controls page and replace preview and source 
  assert.match(e.keys()[16].title,/^2/);assert.equal(e.keys()[10].command.param,'Zoom');assert.equal(e.keys()[6].command.type,'page');
  await e.execute(e.keys()[8].command);assert.equal(e.s.selected.id,1);
 });
-test('Mojo PROGRAM uses routed output confidence frames and never duplicates an unrouted input',async()=>{
- const {image}=require(root+'/render'),e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'mojo',id:1,uid:'demo-0'});
- const now=Date.now(),input={id:1,uid:'demo-0',thumbnail:'data:image/jpeg;base64,/9j/AA==',time:now},output={id:1,thumbnail:'data:image/jpeg;base64,/9j/BB==',time:now};
- e.native={get:(kind,id)=>kind==='input'&&id===1?input:kind==='SDI'&&id===1?output:null};
- e.useNativePreview();e.updateProgram();
- assert.equal(e.keys()[25].thumbnail,input.thumbnail);assert.equal(e.keys()[9].thumbnail,output.thumbnail);
- assert.match(Buffer.from(image(e.keys()[9]).split(',')[1],'base64').toString(),/PGM SDI 1/);
- e.s.data.outputs=[];e.updateProgram();assert.equal(e.keys()[9].thumbnail,null);assert.match(e.keys()[9].title,/NOT ROUTED/);
+test('Mojo output indicator covers all direct and encoder routes without a second thumbnail',async()=>{
+ const e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'mojo',id:1,uid:'demo-0'});
+ const input={id:1,uid:'demo-0',thumbnail:'data:image/jpeg;base64,/9j/AA==',time:Date.now()};e.native={get:(kind,id)=>kind==='input'&&id===1?input:null};e.useNativePreview();
+ e.s.data.outputs=[];e.updateProgram();assert.equal(e.keys()[25].thumbnail,input.thumbnail);assert.equal(e.keys()[9].title,'OUTPUT\nNOT ROUTED');assert.equal(e.keys()[9].color,'#9aa6b4');assert.equal(e.keys()[9].command,null);assert.equal(e.keys()[9].thumbnail,undefined);
+ e.s.data.outputs=[{key:'first',source:1,enabled:false},{key:'second',source:1,enabled:false}];e.updateProgram();assert.equal(e.keys()[9].title,'OUTPUT\nREADY');
+ e.s.data.outputs[1].enabled=true;e.s.data.inputs[0].status=0;e.updateProgram();assert.equal(e.keys()[9].title,'OUTPUT\nREADY');assert.equal(e.keys()[9].color,'#9aa6b4');e.s.data.inputs[0].status=2;e.updateProgram();assert.equal(e.keys()[9].title,'OUTPUT\nLIVE');assert.equal(e.keys()[9].color,'#ff6969');assert.equal(e.keys()[9].thumbnail,undefined);
+ e.s.data.outputs=[{key:'via-encoder',encoder:1,enabled:true}];e.s.encoders=[{id:1,input:1,enabled:false}];e.updateProgram();assert.equal(e.keys()[9].title,'OUTPUT\nREADY');e.s.encoders[0].enabled=true;e.updateProgram();assert.equal(e.keys()[9].title,'OUTPUT\nLIVE');
+ e.s.data.inputs[0].status=0;e.updateProgram();assert.equal(e.keys()[9].title,'OUTPUT\nREADY');e.s.data.inputs[0].status=2;e.s.data.inputs[0].connected=false;e.updateProgram();assert.equal(e.keys()[9].title,'OUTPUT\nREADY');e.s.data.inputs[0].connected=true;
+ e.s.encoders[0].input=2;e.updateProgram();assert.equal(e.keys()[9].title,'OUTPUT\nNOT ROUTED');
 });
 
 test('four detail sections share asset navigation and identity positions with purple single-source Mojo arrows',async()=>{
@@ -450,7 +451,7 @@ test('four detail sections share asset navigation and identity positions with pu
   assert.equal(k[24].command.type,'asset');assert.equal(k[24].command.delta,1);
   assert.ok(k[16].title);assert.equal(k[25].kind,'preview');
   assert.match(svg(k[8]),/fill="#33264d"/);assert.match(svg(k[24]),/stroke="#ba9cff"/);
-  if(command.type==='mojo'){assert.equal(k[9].kind,'preview');assert.equal(k[6].command.type,'page');}
+  if(command.type==='mojo'){assert.equal(k[9].kind,'status');assert.equal(k[6].command.type,'page');}
   else{assert.equal(k[9].kind,'heading');assert.ok(['power','outputPower','encoderPower'].includes(k[17].command.type));}
  }
 });
@@ -769,4 +770,42 @@ test('GO LIVE activates all selected SDI outputs, and partial activation retries
  const handle=e.client.handle;let fail=true;e.client.handle=async m=>fail&&m.type==='outputControl'&&m.keys[0]==='SDI:2'?{results:[{key:'SDI:2',ok:false,message:'Output busy'}]}:handle(m);
  await assert.rejects(e.execute({type:'routeApply',goLive:true}),/Output busy/);assert.equal(f.roots.basebandPlayer['1'].enable,true);assert.equal(f.roots.basebandPlayer['2'].enable,false);assert.deepEqual(e.s.picker.activationKeys,['SDI:2']);
  fail=false;await e.execute({type:'routeApply',goLive:true});assert.equal(f.roots.basebandPlayer['2'].enable,true);assert.equal(f.requests.filter(r=>r.body?.item==='basebandPlayer.1.enable').length,1);assert.equal(e.s.view,'input');
+});
+
+test('input recording and terminal controls appear only for assigned appropriate source types',async()=>{
+ const e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'input',id:1,uid:'demo-0'});const i=e.s.data.inputs[0];
+ i.connected=false;i.protocolId=-1;for(const slot of [18,19,26,27])assert.equal(e.keys()[slot].blank,true);
+ i.protocolId=0;i.isMojo=false;i.canLive=false;assert.equal(e.keys()[19].icon,'Record');for(const slot of [18,26,27])assert.equal(e.keys()[slot].blank,true);
+ i.connected=true;for(const slot of [18,26,27])assert.equal(e.keys()[slot].blank,true);
+ i.protocolId=-1;i.canLive=true;assert.equal(e.keys()[18].icon,'Record');assert.equal(e.keys()[26].icon,'Intercom');assert.equal(e.keys()[27].icon,'VideoReturn');
+});
+test('shutter uses the requested discrete list and audio adjusts on an integer two dB grid',()=>{
+ const RCP=require(root+'/rcp'),{demo}=require(root+'/demo'),camera=demo().camera;
+ assert.deepEqual(RCP.shutterSteps({ShutterSpeedRange:[25,25600]},{shutterUnit:'denominator'}),[25,30,50,60,75,100,120,150,200,300,400,600,800,1200,1600,2400,3200,4800,6400,12800,19200,25600]);
+ camera.settings.AudioGain.AudioGain=-14.2;assert.equal(step(camera,'AudioGain',1),-12);assert.equal(step(camera,'AudioGain',-1),-16);camera.settings.AudioGain.AudioGain=-12;assert.equal(step(camera,'AudioGain',1),-10);
+});
+test('WB icon skips presets and zoom and audio center keys reset only their own values',async()=>{
+ const e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'mojo',id:1,uid:'demo-0'});const c=e.s.camera;
+ c.settings.WB.WBModes=['Manual','Auto','Daylight','Cloudy'];c.settings.WB.WBMode='Manual';await e.execute({type:'mode',param:'WB'});assert.equal(c.settings.WB.WBMode,'Auto');await e.execute({type:'mode',param:'WB'});assert.equal(c.settings.WB.WBMode,'Manual');
+ c.settings.Zoom.Zoom=3;c.settings.AudioGain.AudioGain=-14.2;e.s.page=1;assert.equal(e.keys()[11].command.type,'mode');assert.equal(e.keys()[27].command.type,'mode');
+ await e.execute(e.keys()[11].command);assert.equal(c.settings.Zoom.Zoom,1);assert.equal(c.settings.AudioGain.AudioGain,-14.2);await e.execute(e.keys()[27].command);assert.equal(c.settings.AudioGain.AudioGain,0);
+});
+
+test('a camera command can interrupt a slow background refresh without disconnecting StreamHub',async()=>{
+ const f=fixture();let blocked=false,entered,aborted=false;const started=new Promise(r=>entered=r);
+ const fetch=async(url,options)=>{if(blocked&&new URL(url).pathname==='/inputs'){entered();return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>{aborted=true;reject(Error('Refresh interrupted'));},{once:true}));}return f.fetch(url,options);};
+ const e=new Engine(createClient,()=>{},fetch);await e.configure({address:'192.0.2.5',key:'test-key'});await e.execute({type:'mojo',id:1,uid:'unit-0'});blocked=true;const refresh=e.refresh();await started;e.interruptRefresh();await refresh;assert.equal(aborted,true);assert.equal(e.s.online,true);assert.equal(e.s.error,'');assert.equal(e.refreshing,false);blocked=false;await e.execute({type:'adjust',param:'WB',delta:1});assert.equal(f.camera.WB.WB,5700);
+});
+test('camera preflight reads identity and settings concurrently before issuing any write',async()=>{
+ const f=fixture();let enabled=false,identityStarted=false,settingsStarted=false,releaseIdentity,releaseSettings;
+ const fetch=async(url,options={})=>{const pathname=new URL(url).pathname;if(enabled&&!options.body){if(pathname==='/inputs/1'){identityStarted=true;return new Promise(r=>releaseIdentity=()=>r(f.fetch(url,options)));}if(pathname==='/inputs/1/mojoPro/cameraSettings'){settingsStarted=true;return new Promise(r=>releaseSettings=()=>r(f.fetch(url,options)));}}return f.fetch(url,options);};
+ const e=new Engine(createClient,()=>{},fetch);await e.configure({address:'192.0.2.5',key:'test-key'});await e.execute({type:'mojo',id:1,uid:'unit-0'});enabled=true;const writes=f.requests.filter(r=>r.method==='POST').length;const command=e.execute({type:'adjust',param:'WB',delta:1});await new Promise(r=>setImmediate(r));assert.equal(identityStarted,true);assert.equal(settingsStarted,true);assert.equal(f.requests.filter(r=>r.method==='POST').length,writes);releaseIdentity();releaseSettings();await command;assert.equal(f.camera.WB.WB,5700);
+});
+
+test('LIVE PROFILE picker shows actual transmitter presets and preserves input power',async()=>{
+ const e=new Engine(createClient);await e.configure({demo:true});const i=e.s.data.inputs[1];i.liveProfiles=[{id:'0',name:'HD'},{id:'7',name:'Low bitrate'}];i.liveProfileId='0';i.liveProfileInstance=42;
+ await e.execute({type:'input',id:i.id,uid:i.uid});const before=i.enabled;assert.equal(e.keys()[20].color,'#ba9cff');await e.execute(e.keys()[20].command);
+ assert.equal(e.s.picker.kind,'liveProfile');assert.equal(e.keys().filter(k=>k.command?.type==='choose').length,2);assert.ok(e.keys()[16].active);
+ await e.execute(e.keys()[17].command);assert.equal(i.liveProfileId,'7');assert.equal(i.enabled,before);assert.equal(e.s.view,'input');assert.match(e.keys()[20].title,/Low bitrate/);
+ i.connected=false;assert.equal(e.keys()[20].command,null);i.connected=true;i.isMojo=true;assert.equal(e.keys()[20].command,null);
 });

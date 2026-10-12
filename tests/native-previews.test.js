@@ -150,3 +150,40 @@ test('native bulk unassign changes both SDI channels in one request and preserve
  for(const id of ['1','2']){assert.equal(config[id].channelIndex,-1);assert.equal(config[id].enable,original[id].enable);assert.equal(config[id].outputOrder,original[id].outputOrder);}
  assert.deepEqual(config['3'],original['3']);
 });
+
+test('verified native metrics update selected readouts, retain zero bitrate and clear on disconnect',async t=>{
+ const p=new NativePreviews({WebSocketClass:Socket});t.after(()=>p.stop());await p.start(connection,identity);const ws=Socket.instances.at(-1);
+ ws.event(['getOutputStats',{result:{IPOutput:[{configKey:8,bitrate:999}]}}]);assert.equal(p.details.get('IP:8'),null);
+ ws.event(['getDeviceInfo',{result:identity}]);ws.event(['getChannelStatus',{result:{channel:[{hardwareIdentifier:'unit-a',product:'SST'}]}}]);
+ ws.event(['inputStatsChange',{'1':{video:[{rx_bitrate:3000,cur_rx_lost_packets:0}]}}]);assert.equal(p.details.get('input:1','unit-a').row.video[0].rx_bitrate,3000);
+ ws.event(['getLiveInfo',{channelId:1,result:{resolution:'1920x1080',videoFrequency:'50'}}]);assert.equal(p.details.get('inputInfo:1','unit-a').row.resolution,'1920x1080');
+ ws.event(['encoderPreviewChange',{result:{encoderId:1,videoBitrate:0,audioBitrate:0,thumbnail:'/9j/AA=='}}]);assert.equal(p.details.get('encoder:1').row.videoBitrate,0);assert.ok(p.get('encoder',1));
+ ws.event(['getOutputStats',{result:{IPOutput:[{configKey:8,bitrate:0}]}}]);assert.equal(p.details.get('IP:8').row.bitrate,0);
+ ws.event(['getEncoderStatus',{result:{encoder:[{status:2,inputInfo:'1920x1080',outputInfo:'H264'}]}}]);assert.equal(p.details.get('encoderStatus:1').row.status,2);
+ ws.close();assert.equal(p.details.rows.size,0);
+});
+
+test('transmitter live profiles select real native IDs and confirm without any power command',async t=>{
+ const p=new NativePreviews({WebSocketClass:Socket});t.after(()=>p.stop());await p.start(connection,identity);const ws=Socket.instances.at(-1);
+ ws.event(['getDeviceInfo',{result:identity}]);ws.event(['getChannelStatus',{result:{channel:[{hardwareIdentifier:'p360',product:'PRO360',connectionStatus:1,instanceId:42}]}}]);
+ ws.event(['liveProfile',{channelId:1,result:{list:JSON.stringify({liveProfile:{'0':{name:'HD',videoBitrate:8000},'7':{name:'Low bitrate',videoBitrate:3000}}})}}]);
+ ws.event(['getLiveInfo',{channelId:1,result:{liveProfileID:'0'}}]);assert.equal(p.liveProfiles(1,'p360').profiles.length,2);
+ const base=ws.sent.length,oldSend=ws.send.bind(ws);ws.send=packet=>{oldSend(packet);if(packet.startsWith('42')){const data=JSON.parse(packet.slice(2));if(data[0]==='setLiveProfile')ws.event(['getLiveInfo',{channelId:1,result:{liveProfileID:data[1]}}]);}};
+ await p.setLiveProfile(1,'p360','7',42);assert.equal(p.liveProfiles(1,'p360').current,'7');assert.deepEqual(ws.sent.slice(base).map(s=>JSON.parse(s.slice(2))),[['setLiveProfile','7',4010,42]]);
+ await assert.rejects(p.setLiveProfile(1,'p360','missing',42),/changed/);await assert.rejects(p.setLiveProfile(1,'p360','0',99),/changed/);
+ ws.event(['getChannelStatus',{result:{channel:[{hardwareIdentifier:'replacement',product:'PRO360',connectionStatus:1,instanceId:43}]}}]);assert.equal(p.liveProfiles(1,'p360'),null);assert.equal(p.liveProfiles(1,'replacement'),null);
+});
+test('live profile switch fails if transmitter is replaced before readback',async t=>{
+ const p=new NativePreviews({WebSocketClass:Socket});t.after(()=>p.stop());await p.start(connection,identity);const ws=Socket.instances.at(-1);ws.event(['getDeviceInfo',{result:identity}]);
+ ws.event(['getChannelStatus',{result:{channel:[{hardwareIdentifier:'air',product:'AIR',connectionStatus:1,instanceId:4}]}}]);ws.event(['liveProfile',{channelId:1,result:{list:JSON.stringify({liveProfile:{'0':{name:'HD'},'1':{name:'SD'}}})}}]);
+ const pending=p.setLiveProfile(1,'air','1',4);ws.event(['getChannelStatus',{result:{channel:[{hardwareIdentifier:'air',product:'AIR',connectionStatus:1,instanceId:5}]}}]);await assert.rejects(pending,/identity changed/);assert.equal(p.pendingLiveProfile,null);
+});
+
+test('transmitter live profile rejection remains an error and unsupported sources expose no presets',async t=>{
+ const p=new NativePreviews({WebSocketClass:Socket});t.after(()=>p.stop());await p.start(connection,identity);const ws=Socket.instances.at(-1);ws.event(['getDeviceInfo',{result:identity}]);
+ ws.event(['getChannelStatus',{result:{channel:[{hardwareIdentifier:'air',product:'AIR',connectionStatus:1,instanceId:4},{hardwareIdentifier:'mojo',product:'MoJoPro',connectionStatus:1,instanceId:5}]}}]);
+ for(const channelId of [1,2])ws.event(['liveProfile',{channelId,result:{list:JSON.stringify({liveProfile:{'0':{name:'HD'},'1':{name:'SD'}}})}}]);assert.equal(p.liveProfiles(2,'mojo'),null);
+ const oldSend=ws.send.bind(ws);ws.send=packet=>{oldSend(packet);if(packet.includes('setLiveProfile'))ws.event(['serverError',{result:{message:'Rejected'}}]);};
+ await assert.rejects(p.setLiveProfile(1,'air','1',4),/rejected/);assert.equal(p.liveProfiles(1,'air').current,null);assert.equal(p.pendingLiveProfile,null);
+ ws.event(['liveProfile',{channelId:1,result:{list:'invalid json'}}]);assert.equal(p.liveProfiles(1,'air').profiles.length,0);await assert.rejects(p.setLiveProfile(1,'air','0',4),/changed/);
+});

@@ -32,7 +32,7 @@ function render(device){
  for(const [context,c]of contexts)if(c.device===device){
   const id=rowConnection(c),e=engines.get(sessionKey(device,id)),cfg=saved(id);let k;
   if(c.launcher)k={title:(cfg.name||'STREAMHUB XL')+'\n'+(e?.s.online?'OPEN':'CONTROLLER'),color:'#ba9cff',kind:'asset'};
-  else {if(!active.has(device)||!e)continue;k=e.keys()[c.slot];if(c.slot===4&&e.s.view==='list')k={title:'ADD\nSTREAMHUB',color:'#ba9cff'};if(c.slot===5){const ids=hubIds(device);k={title:'NEXT HUB\n'+(ids.indexOf(id)+1)+' / '+ids.length,color:'#ba9cff',disabled:ids.length<2};}}
+  else {if(!active.has(device)||!e)continue;k=e.keys()[c.slot];if(c.slot===4&&e.s.view==='list')k={title:'ADD\nSTREAMHUB',color:'#ba9cff'};if(c.slot===5&&!(e.s.view==='pick'&&e.s.picker?.kind==='multiviewInput')){const ids=hubIds(device);k={title:'NEXT HUB\n'+(ids.indexOf(id)+1)+' / '+ids.length,color:'#ba9cff',disabled:ids.length<2};}}
 
   const sig=image(k);if(c.sig===sig)continue;c.sig=sig;if(!c.titleCleared){send('setTitle',context,{title:'',target:0});c.titleCleared=true;}send('setImage',context,{image:sig,target:0});
  }
@@ -131,10 +131,11 @@ async function onMessage(message){
   if(!supportedDevice(c.device)){failure(Error('Use Stream Deck XL or Stream Deck Mobile with an 8 x 4 controller layout'),m.context);return;}
   if(c.launcher){hold.stopAll();const id=rowConnection(c);launches.set(c.device,{id,pending:true});ws.send(JSON.stringify({event:'switchToProfile',context:uuid,device:c.device,payload:{profile:'profiles/StreamHub XL',page:0}}));return;}
   if(!active.has(c.device))return;
+  if(c.slot===5&&engine(c.device).s.picker?.kind==='multiviewInput')return;
   if(c.slot===5){const ids=hubIds(c.device),index=ids.indexOf(active.get(c.device));if(ids.length>1)selectHub(c.device,ids[(index+1)%ids.length]);return;}
   if(c.slot===4&&engine(c.device).s.view==='list'){addHub(c.device);return;}
   const id=rowConnection(c);if(operations.get(id)?.busy)return;const e=engine(c.device,id),k=e.keys()[c.slot];if(k.disabled||!k.command)return;
-  if(['adjust','mode'].includes(k.command.type))e.lastMojoActivity=Date.now();
+  if(['adjust','mode'].includes(k.command.type)){e.lastMojoActivity=Date.now();e.interruptRefresh?.();}
   const revision=e.revision,selection=e.previewSelection(),view=e.s.view,section=e.s.section,page=e.s.page;
   const valid=()=>active.get(c.device)===id&&contexts.get(m.context)===c&&e.revision===revision&&e.s.view===view&&e.s.section===section&&e.s.page===page&&e.previewSelection()===selection;
   const wait=async()=>{while(e.s.busy||e.refreshing){await new Promise(resolve=>setTimeout(resolve,25));if(!valid())return false;}return valid();};
@@ -147,7 +148,7 @@ ws.addEventListener('message',m=>{void onMessage(m).catch(error=>failure(error))
 ws.addEventListener('error',()=>hold.stopAll());
 ws.addEventListener('close',()=>{hold.stopAll();clearTimeout(pollTimer);for(const e of engines.values())e.dispose();process.exit(0);});
 async function poll(){
- if(!polling&&!hold.active.size){polling=true;try{for(const [device,id]of active){if(offlineDevices.has(device))continue;const e=engines.get(sessionKey(device,id));if(e&&!operations.get(id)?.busy){if(e.s.view!=='mojo'||Date.now()-(e.lastMojoActivity||0)>1000)await e.refresh();await e.readPreview();}}}finally{polling=false;}}
+ if(!polling&&!hold.active.size){polling=true;try{for(const [device,id]of active){if(offlineDevices.has(device))continue;const e=engines.get(sessionKey(device,id));if(e&&!operations.get(id)?.busy){if(e.s.view!=='mojo'||Date.now()-(e.lastMojoActivity||0)>2500)await e.refresh();await e.readPreview();}}}finally{polling=false;}}
  pollTimer=setTimeout(poll,1800);
 }
 pollTimer=setTimeout(poll,1800);

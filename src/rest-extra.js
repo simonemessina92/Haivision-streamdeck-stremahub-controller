@@ -19,7 +19,7 @@ class Extra {
   const [enc,profiles,metadata]=await Promise.all([this.config('enc'),this.config('encoderProfile'),this.request('/')]);
   if(Object.keys(enc).some(k=>!/^\d+$/.test(k)))throw Error('Encoder configuration is unavailable through REST');
   this.metadata=metadata;this.capacity=this.limit(metadata);this.enc=enc;this.profiles=profiles;
-  return Object.entries(enc).filter(([id,r])=>/^\d+$/.test(id)&&Number(id)>=1&&Number(id)<=this.capacity&&r&&'encoderProfileId'in r&&'enable'in r).map(([id,r])=>({id:Number(id),profile:String(r.encoderProfileId),name:profiles[r.encoderProfileId]?.name||'No profile',enabled:truth(r.enable),input:Number(r.inputIndex)>=0?Number(r.inputIndex)+1:null,status:null}));
+  return Object.entries(enc).filter(([id,r])=>/^\d+$/.test(id)&&Number(id)>=1&&Number(id)<=this.capacity&&r&&'encoderProfileId'in r&&'enable'in r).map(([id,r])=>({id:Number(id),configuration:require('./channel-details').configuration(profiles[r.encoderProfileId]),streamDetails:require('./channel-details').configuration(r),streamStats:require('./channel-details').statistics(r),profile:String(r.encoderProfileId),name:profiles[r.encoderProfileId]?.name||'No profile',enabled:truth(r.enable),input:Number(r.inputIndex)>=0?Number(r.inputIndex)+1:null,status:null}));
  }
  async slot(id){
   const rows=await this.snapshot();if(!rows.some(e=>e.id===Number(id)))throw Error('Encoder is outside the StreamHub licensed capacity');return this.enc[id];
