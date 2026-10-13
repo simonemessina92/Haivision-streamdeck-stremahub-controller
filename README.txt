@@ -1,4 +1,4 @@
-STREAMHUB XL — QUICK START — 0.17.0
+STREAMHUB XL — QUICK START — 0.18.0
 
 INSTALL
 Windows 10+, Stream Deck app 7.1+, Stream Deck XL or Stream Deck Mobile (32 keys, 8 columns x 4 rows).
@@ -24,13 +24,20 @@ Save and connect. Web login enables previews and device features.
 MORE STREAMHUBS
 Press ADD STREAMHUB on the panel list screen, then select ONLINE / OFFLINE in
  the app to configure the new unit. You can also choose + Add StreamHub in settings.
-NEXT HUB cycles all saved units in this same panel, with no fixed unit limit.
+NEXT STREAMHUB shows the selected unit position and cycles all saved units in this same panel, with no fixed unit limit.
 The unit name on ONLINE identifies the selected server.
 PAGE continues to page assets within the selected StreamHub.
 Existing saved units remain available; switching units retains their configuration.
 
 HUB DETAILS
 Press ONLINE / OFFLINE on the device for hub information, system readings and licenses.
+INFO / SYSTEM / LICENSES cycles these views; the active view is white and bold.
+INFO has horizontal label/value rows. PAGE cycles all available readout pages.
+IPv4 uses four octet keys, MAC six byte keys. ADDRESS separates protocol, host and port.
+PUBLIC HOST/HOSTNAME preserve dots in balanced segments with a consistent font.
+SYSTEM fits six reported metrics in twelve keys, with %, MiB/GiB and multiline labels.
+NEXT STREAMDECK PAGE targets page 2 of the supplied profile when you add that page.
+Add a native Previous Page action there to return to the controller.
 OPEN WEB GUI opens the PC browser using HTTPS443, HTTP8888 or a custom URL.
 RECONNECT retains access details. REMOTE ACCESS opens compatible transmitter web GUIs.
 API ports: HTTP8893 / HTTPS8896. Web login/preview ports: HTTP8888 / HTTPS443.
@@ -45,7 +52,12 @@ Live inputs show cell previews. BASIC hides information overlays.
 Multiview SDI/NDI routing is direct; IP routing uses an encoding profile, not passthrough.
 Input ROUTE TO OUTPUT offers ADD TO ENCODER for SDI/IP. NDI remains direct.
 Select outputs, then ASSIGN ONLY or ASSIGN & GO LIVE.
-ENCODERS has BULK ON/OFF with multiselection and confirmation.
+ENCODERS has BULK ON/OFF and BULK UNASSIGN with multiselection and confirmation.
+Encoder UNASSIGN clears sources only, keeping profiles, power and output assignments.
+INPUTS separates BULK UNASSIGN (IP profiles) from BULK EJECT (connected devices).
+SELECT INPUT beside input status chooses an eligible IP input profile.
+STATUS DETAILS and Multiview refresh automatically; redundant REFRESH keys are removed.
+Multiview power is in the top row; geometry, BASIC and routing controls are on the right.
 SYSTEM distinguishes RAM and disk, with capacities in MiB/GiB.
 ASSIGN ONLY preserves power state; ASSIGN & GO LIVE enables the required channels.
 Mojo microphone selection remains in the phone app.

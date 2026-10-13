@@ -3,6 +3,14 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const root='../org.streamhub.controller.sdPlugin/bin/';
 const {configuration,statistics,LiveDetails}=require(root+'channel-details');
 const {Engine}=require(root+'engine'),createClient=require(root+'client');
+test('network identifiers render on intact lines and numbered parts retain every character',()=>{
+ const {tiles}=require(root+'channel-details'),{svg}=require(root+'render');
+ for(const [label,value]of [['LOCAL IP 1','192.168.100.200'],['MAC ADDRESS','AA:BB:CC:DD:EE:FF'],['PUBLIC HOST','streamhub.production.example.test'],['ADDRESS','https://streamhub.production.example.test:8896/']]){
+  const parts=tiles([{label,value}]);assert.equal(parts.map(p=>p.displayLines.at(-1)).join(''),value);if(label==='LOCAL IP 1')assert.equal(parts.length,1);
+  for(const [n,part]of parts.entries()){assert.ok(part.displayLines.length<=4);assert.ok(part.displayLines.at(-1).length<=16);const image=svg({...part,kind:'heading',color:'#d5dce5'});const texts=[...image.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(m=>m[1]);assert.deepEqual(texts,part.displayLines);if(parts.length>1)assert.ok(part.displayLines.includes('PART '+(n+1)+' / '+parts.length));}
+ }
+ const safeParts=tiles(configuration({uri:'srt://user:secret@streamhub.production.example.test:5000?token=secret'}));assert.ok(!JSON.stringify(safeParts).includes('secret'));
+});
 test('channel readouts exclude secrets and URL credentials, preserve zero and native units',()=>{
  const entries=configuration({mode:'SRT',port:5000,delay:120,password:'private',passphrase:'private',streamKey:'private',uri:'srt://user:private@host:5000?passphrase=private',nested:{password:'private'}});
  assert.ok(entries.some(e=>e.label==='LATENCY (ms)'&&e.value==='120'));assert.ok(entries.some(e=>e.value==='srt://host:5000'));assert.ok(!JSON.stringify(entries).includes('private'));

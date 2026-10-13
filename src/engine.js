@@ -8,6 +8,7 @@ const {copyText}=require('./clipboard');
 const {GROUPS,outputGroup,channel,canEjectOutput,nextOutputProfile,ipProfiles}=require('./outputs');
 class Engine {
  constructor(createClient,notify=()=>{},fetchFn=globalThis.fetch,options={}){
+  this.switchControllerPage=options.switchControllerPage||(()=>{throw Error('Page navigation is available in the Stream Deck app');});
   this.openUrl=options.openUrl||(()=>{throw Error('Browser access is available from the Stream Deck app');});this.reconnect=options.reconnect||(()=>{throw Error('Reconnect from ONLINE / OFFLINE settings in the app');});this.copyText=options.copyText||copyText;this.networkSignature=null;
   this.abortController=new AbortController();this.disposed=false;
   const originalFetch=fetchFn;fetchFn=(url,options={})=>{
@@ -178,15 +179,17 @@ class Engine {
  async execute(c){
   if(!c)return;
   if(c.type==='back'){this.back();return;}
-  if(c.type==='section'){this.s.outputBulk=null;this.s.inputBulk=null;this.s.encoderBulk=null;
+  if(c.type==='section'){this.s.inputBulkMode=null;this.s.outputBulk=null;this.s.inputBulk=null;this.s.encoderBulk=null;
    this.stack=[];this.native?.selectInput(null);this.s.section=c.section;this.s.view='list';this.s.page=0;this.s.selected=null;this.s.camera=null;this.emit();
    if(!this.s.demo&&this.s.online&&c.section==='ENCODERS')await this.mutate(()=>this.readEncoders());
    if(!this.s.demo&&this.s.online&&c.section==='MOJO PRO')await this.mutate(()=>this.discover());return;
   }
   if(c.type==='page'){this.s.page=(this.s.page+(c.delta??1))%(c.pages||2);this.emit();return;}
   if(c.type==='hub'){if(this.s.view!=='hub'){this.push('hub');this.s.hubTab='INFO';}this.emit();return;}
+  if(c.type==='hubTabCycle'){if(this.s.view==='hub'){const tabs=['INFO','SYSTEM','LICENSES'];this.s.hubTab=tabs[(Math.max(0,tabs.indexOf(this.s.hubTab))+1)%tabs.length];this.s.page=0;this.emit();}return;}
   if(c.type==='hubTab'){if(this.s.view==='hub'&&['INFO','SYSTEM','LICENSES'].includes(c.tab)){this.s.hubTab=c.tab;this.s.page=0;this.emit();}return;}
   if(c.type==='hubWeb'){if(!this.s.webUrl)throw Error('Configure the StreamHub web address first');await this.openUrl(this.s.webUrl);return;}
+  if(c.type==='controllerPage'){if(this.s.view!=='hub')return;if(c.page!==1)throw Error('Invalid controller page');await this.switchControllerPage(1);return;}
   if(c.type==='hubReconnect'){if(!this.s.canReconnect)throw Error('Enter connection details in the Stream Deck app first');await this.reconnect();return;}
   if(c.type==='refresh'){await this.refresh();return;}
   if(!this.s.online)throw Error('StreamHub is disconnected');
@@ -216,17 +219,18 @@ class Engine {
   if(c.type==='outputBulkCancel'){this.s.outputBulk=null;this.s.inputBulk=null;this.s.encoderBulk=null;this.emit();return;}
   if(c.type==='outputBulkSelect'){const bulk=this.s.outputBulk,o=this.s.data.outputs.find(o=>o.key===c.key);if(!bulk||!o||o.locked||!o.powerAvailable||bulk.mode==='unassign'&&!o.source&&!o.encoder)return;bulk.keys=bulk.keys.includes(c.key)?bulk.keys.filter(key=>key!==c.key):[...bulk.keys,c.key];this.emit();return;}
   if(c.type==='outputBulkRun'){await this.applyOutputBulk();return;}
-  if(c.type==='encoderBulkStart'){if(this.s.section!=='ENCODERS'||this.s.view!=='list')return;this.s.bulk=null;this.s.bulkConfirm=null;this.s.encoderBulk={items:[]};this.emit();return;}
+  if(c.type==='encoderBulkStart'){if(this.s.section!=='ENCODERS'||this.s.view!=='list')return;this.s.bulk=null;this.s.bulkConfirm=null;this.s.encoderBulk={mode:c.mode==='unassign'?'unassign':'toggle',items:[]};this.emit();return;}
   if(c.type==='encoderBulkCancel'){this.s.encoderBulk=null;this.emit();return;}
-  if(c.type==='encoderBulkSelect'){const bulk=this.s.encoderBulk,e=this.s.encoders.find(e=>e.id===c.id&&e.profile!=='-1');if(!bulk||!e)return;bulk.items=bulk.items.some(x=>x.id===e.id)?bulk.items.filter(x=>x.id!==e.id):[...bulk.items,{id:e.id,profile:e.profile}];this.emit();return;}
+  if(c.type==='encoderBulkSelect'){const bulk=this.s.encoderBulk,e=this.s.encoders.find(e=>e.id===c.id&&e.profile!=='-1');if(!bulk||!e||bulk.mode==='unassign'&&!e.input)return;bulk.items=bulk.items.some(x=>x.id===e.id)?bulk.items.filter(x=>x.id!==e.id):[...bulk.items,{id:e.id,profile:e.profile,...(bulk.mode==='unassign'?{input:e.input}:{})}];this.emit();return;}
   if(c.type==='encoderBulkRun'){await this.applyEncoderBulk();return;}
   if(c.type==='inputBulkStart'){if(this.s.section!=='INPUT')return;this.s.bulk=null;this.s.bulkConfirm=null;this.s.inputBulk={items:[]};this.emit();return;}
   if(c.type==='inputBulkCancel'){this.s.inputBulk=null;this.s.encoderBulk=null;this.emit();return;}
   if(c.type==='inputBulkSelect'){const bulk=this.s.inputBulk,i=this.checkInput(c.id,c.uid);if(!bulk||!this.inputPowerAvailable(i))return;bulk.items=bulk.items.some(x=>x.id===i.id)?bulk.items.filter(x=>x.id!==i.id):[...bulk.items,{id:i.id,uid:i.uid}];this.emit();return;}
   if(c.type==='inputBulkRun'){await this.applyInputBulk();return;}
-  if(c.type==='bulkStart'){this.s.outputBulk=null;this.s.inputBulk=null;this.s.encoderBulk=null;this.s.bulkConfirm=null;this.s.bulk=[];this.emit();return;}
+  if(c.type==='unassignInput'){const input=this.checkInput(c.id,c.uid);if(!require('./bulk').canUnassignInput(input))throw Error('Only assigned IP sources can be unassigned');await this.mutate(async()=>{if(this.s.demo){input.protocolId=-1;input.connected=false;input.status=0;}else if(this.native?.verified){await this.native.ejectInput(input,this.extra);this.s.data=await this.client.handle({type:'snapshot',fresh:true});}else{const result=await this.client.handle({type:'inputEject',input:input.id,expectedUID:input.uid});if(result.snapshot)this.s.data=result.snapshot;}});return;}
+  if(c.type==='bulkStart'){this.s.inputBulkMode=this.s.section==='INPUT'&&['unassign','eject'].includes(c.mode)?c.mode:null;this.s.outputBulk=null;this.s.inputBulk=null;this.s.encoderBulk=null;this.s.bulkConfirm=null;this.s.bulk=[];this.emit();return;}
   if(c.type==='bulkCancel'){this.s.bulkConfirm=null;this.s.bulk=null;this.emit();return;}
-  if(c.type==='bulkSelect'){this.s.bulkConfirm=null;const k=JSON.stringify(c.command),b=this.s.bulk||[];this.s.bulk=b.some(x=>JSON.stringify(x)===k)?b.filter(x=>JSON.stringify(x)!==k):[...b,c.command];this.emit();return;}
+  if(c.type==='bulkSelect'){if(this.s.inputBulkMode){const i=this.checkInput(c.command.id,c.command.uid),allowed=this.s.inputBulkMode==='unassign'?c.command.type==='unassignInput'&&require('./bulk').canUnassignInput(i):c.command.type==='ejectInput'&&require('./bulk').canEjectInput(i);if(!allowed)return;}this.s.bulkConfirm=null;const k=JSON.stringify(c.command),b=this.s.bulk||[];this.s.bulk=b.some(x=>JSON.stringify(x)===k)?b.filter(x=>JSON.stringify(x)!==k):[...b,c.command];this.emit();return;}
   if(c.type==='bulkRun'){await this.bulkEject(c.confirmed);return;}
   if(c.type==='asset'){await this.cycleAsset(c.delta);return;}
   if(c.type==='detailsTab'){if(this.s.view!=='diagnostic'||!['CONFIG','STATS','ALERTS'].includes(c.tab))return;this.s.detailsTab=c.tab;this.s.page=0;this.emit();return;}
@@ -545,8 +549,8 @@ class Engine {
   const bulk=this.s.encoderBulk;if(!bulk?.items.length)return;const initial=[...bulk.items];let completed=0;
   await this.mutate(async()=>{
    if(!this.s.demo){await this.readEncoders();if(this.s.encoderError)throw Error(this.s.encoderError);}
-   const plans=initial.map(item=>{const e=this.s.encoders.find(e=>e.id===item.id&&e.profile===item.profile&&e.profile!=='-1');if(!e)throw Error('An encoder profile changed; review the selection');return {...item,enabled:!e.enabled};});
-   try{for(const plan of plans){if(this.s.demo){const e=this.s.encoders.find(e=>e.id===plan.id);e.enabled=plan.enabled;e.status=plan.enabled?2:0;}else{const slot=await this.extra.slot(plan.id);if(String(slot.encoderProfileId)!==plan.profile)throw Error('Encoder profile changed');await this.extra.power(plan.id,plan.enabled);}completed++;bulk.items=initial.slice(completed);}
+   const plans=initial.map(item=>{const e=this.s.encoders.find(e=>e.id===item.id&&e.profile===item.profile&&e.profile!=='-1');if(!e)throw Error('An encoder profile changed; review the selection');if(bulk.mode==='unassign'&&e.input!==item.input)throw Error('An encoder source changed; review the selection');return {...item,enabled:!e.enabled};});
+   try{for(const plan of plans){if(this.s.demo){const e=this.s.encoders.find(e=>e.id===plan.id);if(bulk.mode==='unassign')e.input=null;else{e.enabled=plan.enabled;e.status=plan.enabled?2:0;}}else{const slot=await this.extra.slot(plan.id);if(String(slot.encoderProfileId)!==plan.profile)throw Error('Encoder profile changed');if(bulk.mode==='unassign'){if(Number(slot.inputIndex)!==plan.input-1)throw Error('Encoder source changed');await this.extra.set('enc',plan.id,'inputIndex',-1);}else await this.extra.power(plan.id,plan.enabled);}completed++;bulk.items=initial.slice(completed);}
    }catch(error){throw Error(completed+' of '+initial.length+' encoders updated. '+error.message);}finally{if(!this.s.demo)await this.readEncoders();}
   });this.s.encoderBulk=null;this.emit();
  }
@@ -591,6 +595,7 @@ class Engine {
  async bulkEject(confirmed=false){
  const commands=[...(this.s.bulk||[])];if(!commands.length)return;
  if(!this.s.demo){await this.refresh();if(!this.s.online)throw Error('Refresh failed; no items ejected');if(commands.some(c=>c.type==='ejectEncoder'))await this.readEncoders();}
+ if(this.s.inputBulkMode)for(const c of commands){const i=this.checkInput(c.id,c.uid);if(!(this.s.inputBulkMode==='unassign'?c.type==='unassignInput'&&require('./bulk').canUnassignInput(i):c.type==='ejectInput'&&require('./bulk').canEjectInput(i)))throw Error('Input type changed; review the selection');}
  for(const group of ['SDI','NDI']){
   const all=this.s.data.outputs.filter(o=>outputGroup(o)===group).sort((a,b)=>channel(b)-channel(a));
   const chosen=commands.filter(c=>c.type==='ejectOutput'&&all.some(o=>o.key===c.key)),selected=new Set(chosen.map(c=>c.key));
@@ -607,7 +612,7 @@ class Engine {
  let completed=0;this.s.bulkConfirm=null;
  try{for(const command of commands){await this.execute(command);completed++;this.s.bulk=commands.slice(completed);}}
  catch(error){this.s.bulk=commands.slice(completed);this.emit();throw Error(completed+' of '+commands.length+' ejected: '+error.message);}
- this.s.bulk=null;this.emit();
+ this.s.bulk=null;this.s.inputBulkMode=null;this.emit();
 }
  async cycleAsset(delta){
  const {assets,sameAsset}=require('./assets'),items=assets(this.s);if(items.length<2)return;

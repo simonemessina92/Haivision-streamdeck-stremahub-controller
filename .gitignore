@@ -7,3 +7,7 @@ diagnostics/
 .env
 .env.*
 *.bin
+INSTALLA-DEVELOP.cmd
+preview-layout.cjs
+investigate-preview.cjs
+src/images/logo-alpha.png

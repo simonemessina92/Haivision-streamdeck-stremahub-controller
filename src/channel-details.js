@@ -38,7 +38,13 @@ class LiveDetails{
 function tiles(entries){
  const out=[],seen=new Set(),wrap=require('./render').wrap;
  for(const entry of entries){if(entry.value===undefined||entry.value===null)continue;const id=entry.label+'='+entry.value;if(seen.has(id))continue;seen.add(id);
- const label=wrap(entry.label).slice(0,3),valueLines=require('./diagnostics').chunks(String(entry.value)).flatMap(part=>part.split('\n')),capacity=4-label.length;
+ const text=String(entry.value),structured=/^[a-z][a-z0-9+.-]*:\/\//i.test(text)||/^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(text)||/^(?:[a-f0-9]{2}[:-]){5}[a-f0-9]{2}$/i.test(text)||/^(?:[a-z0-9_-]+\.)+[a-z0-9_-]+(?::\d+)?$/i.test(text)||(/HOST|\bIP\b|\bMAC\b/.test(entry.label)&&! /\s/.test(text));
+ if(structured){
+  const parts=[];let current='';
+  for(let token of text.split(/(?<=[.:/\-])/)){if(current.length+token.length>16){if(current){parts.push(current);current='';}}while(token.length>16){parts.push(token.slice(0,16));token=token.slice(16);}current+=token;}if(current)parts.push(current);
+  parts.forEach((part,n)=>{const displayLines=[...wrap(entry.label).slice(0,2),...(parts.length>1?['PART '+(n+1)+' / '+parts.length]:[]),part];out.push({title:displayLines.join('\n'),displayLines});});continue;
+ }
+ const label=wrap(entry.label).slice(0,3),valueLines=require('./diagnostics').chunks(text).flatMap(part=>part.split('\n')),capacity=4-label.length;
  for(let offset=0;offset<valueLines.length;offset+=capacity)out.push({title:[...label,...valueLines.slice(offset,offset+capacity)].join('\n')});
  }return out;
 }

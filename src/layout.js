@@ -27,9 +27,10 @@ function layout(s){
  if(!s.online&&!['mojo','hub'].includes(s.view)){header('SETUP\nCONNECTION');if(s.error)a[16]=key('CONNECTION\nFAILED',null,COLORS.danger);return a;}
  if(s.view==='hub'){
   header('HUB\nDETAILS',s.connectionName||'STREAMHUB');const tab=s.hubTab||'INFO';
-  ['INFO','SYSTEM','LICENSES'].forEach((title,n)=>a[10+n]=key(title,{type:'hubTab',tab:title},COLORS.nav,{kind:'tab',active:tab===title}));
-  a[13]=key('REFRESH',{type:'refresh'},COLORS.nav,{disabled:!s.online});a[14]=key('OPEN\nWEB GUI',{type:'hubWeb'},COLORS.nav,{icon:'Web',disabled:!s.webUrl});a[15]=key('RECONNECT',{type:'hubReconnect'},COLORS.nav,{disabled:!s.canReconnect});
-  list(require('./channel-details').tiles(require('./hub-details').entries(s,tab)),item=>key(item.title,null,COLORS.info,{kind:'heading'}));
+  a[10]=key('INFO\nSYSTEM\nLICENSES',{type:'hubTabCycle'},COLORS.nav,{kind:'tab',lineStyles:['INFO','SYSTEM','LICENSES'].map(title=>({color:tab===title?'#ffffff':COLORS.muted,weight:tab===title?700:400}))});
+  a[13]=key('OPEN\nWEB GUI',{type:'hubWeb'},COLORS.nav,{icon:'Web',disabled:!s.webUrl});a[14]=key('RECONNECT',{type:'hubReconnect'},COLORS.nav,{disabled:!s.canReconnect});a[15]=key('NEXT\nSTREAMDECK\nPAGE',{type:'controllerPage',page:1},'#ffffff',{kind:'navigation',background:'#000000'});
+  const hubDetails=require('./hub-details'),values=hubDetails.entries(s,tab),tiles=tab==='LICENSES'?require('./channel-details').tiles(values):tab==='SYSTEM'?hubDetails.systemTiles(values):hubDetails.rowTiles(values);
+  list(tiles,item=>key(item.title,null,item.color||COLORS.info,{...item,kind:item.kind||'heading'}));
  }else if(s.view==='list'){
   if(s.section==='INPUT'||s.section==='MOJO PRO'){
    const rows=s.data.inputs.filter(i=>i.id<=32&&(s.section==='INPUT'||i.isMojo&&i.connected));
@@ -59,26 +60,26 @@ function layout(s){
    const frame=input?.connected&&input.status===2?s.multiviewFrames?.[id]:null,valid=frame&&Date.now()-frame.time<7000;
    a[row*8+col]=key(valid?id+' '+input.name:(row+1)+'.'+(col+1)+'\n'+(id?id+'\n'+(input?.name||'UNAVAILABLE'):'+ INPUT'),{type:'pick',kind:'multiviewInput',cell},color,{kind:valid?'preview':'asset',thumbnail:valid?frame.thumbnail:undefined,overlay:valid&&m.overlay});
   }
-  for(const [axis,base,value]of [['rows',12,m.rows],['columns',20,m.columns]]){
+  for(const [axis,base,value]of [['rows',20,m.rows],['columns',28,m.columns]]){
    a[base]=key(axis==='rows'?'ROWS\n−':'COLS\n−',{type:'multiviewChange',operation:{kind:'resize',axis,delta:-1,expected:require('./multiview').fingerprint(m)}},COLORS.action,{disabled:value<=1});
    a[base+1]=key((axis==='rows'?'ROWS':'COLS')+'\n'+value,null,COLORS.info,{kind:'value'});
    a[base+2]=key(axis==='rows'?'ROWS\n+':'COLS\n+',{type:'multiviewChange',operation:{kind:'resize',axis,delta:1,expected:require('./multiview').fingerprint(m)}},COLORS.action,{disabled:value>=4});
   }
-  a[15]=key('MULTIVIEW\n'+(m.enabled?'ON':'OFF'),{type:'multiviewChange',operation:{kind:'power',enabled:!m.enabled}},m.enabled?COLORS.danger:COLORS.muted,{kind:'status'});
+  a[6]=key('MULTIVIEW\n'+(m.enabled?'ON':'OFF'),{type:'multiviewChange',operation:{kind:'power',enabled:!m.enabled}},m.enabled?COLORS.danger:COLORS.action,{kind:m.enabled?'status':'action'});
   a[23]=key('BASIC\n'+(m.overlay?'OFF':'ON'),{type:'multiviewChange',operation:{kind:'overlay',enabled:!m.overlay}},COLORS.nav,{active:!m.overlay});
-  a[28]=key('MULTIVIEW',null,COLORS.nav,{kind:'heading'});a[29]=key(m.columns+' x '+m.rows,null,COLORS.info,{kind:'value'});
-  a[28]=key('ROUTE TO\nOUTPUT',{type:'pick',kind:'multiviewRoute'},COLORS.nav);
-  a[30]=key('REFRESH',{type:'multiviewRefresh'},COLORS.nav);if(s.multiviewError)a[31]=key('READ\nERROR',null,COLORS.danger);
+  a[31]=key('ROUTE TO\nOUTPUT',{type:'pick',kind:'multiviewRoute'},COLORS.nav);
+  if(s.multiviewError)a[15]=key('READ\nERROR',null,COLORS.danger);
  }else if(s.view==='input'){
   const i=s.data.inputs.find(i=>i.id===s.selected.id&&i.uid===s.selected.uid);
   if(!i){header('SOURCE','CHANGED');return a;}
-  header(''+i.id+'\n'+i.name,status(i));a[9].color=i.status===2?COLORS.danger:i.connected?COLORS.on:COLORS.muted;
+  header(''+i.id+'\n'+i.name,status(i));a[9].textOnly=true;a[9].color=i.status===2?COLORS.danger:i.connected?COLORS.on:COLORS.muted;
   a[16]=key(i.enabled?'STOP':'GO LIVE',{type:'power',id:i.id,uid:i.uid,enabled:!i.enabled},i.enabled?COLORS.danger:COLORS.on,{disabled:!i.canPower,glyph:i.enabled?'stop':'play'});
   const assigned=i.connected||Number.isInteger(i.protocolId)&&i.protocolId>=0,terminal=assigned&&i.connected&&(i.isMojo||i.canLive&&i.protocolId<0);
-  if(terminal)a[18]=key('UNIT REC\n'+(!i.connected?'OFFLINE':typeof i.deviceRecording!=='boolean'?/login/i.test(s.previewStatus||'')?'LOGIN':'READING':i.deviceRecording?'ON':'OFF'),{type:'record',id:i.id,uid:i.uid,endpoint:'record',enabled:!i.deviceRecording},i.deviceRecording===true?COLORS.record:COLORS.action,{disabled:!i.connected||typeof i.deviceRecording!=='boolean',active:i.deviceRecording===true,icon:'Record'});
-  if(assigned)a[19]=key('HUB REC\n'+([2,4].includes(i.recorderStatus)?'ON':'OFF'),{type:'record',id:i.id,uid:i.uid,endpoint:'streamhubRecord',enabled:![2,4].includes(i.recorderStatus)},[2,4].includes(i.recorderStatus)?COLORS.record:COLORS.action,{disabled:!Number.isFinite(i.recorderStatus)||i.recorderStatus===0||(!i.connected&&i.protocolId<0),active:[2,4].includes(i.recorderStatus),icon:'Record'});
+  if(terminal)a[18]=key('UNIT REC\n'+(!i.connected?'OFFLINE':typeof i.deviceRecording!=='boolean'?/login/i.test(s.previewStatus||'')?'LOGIN':'READING':i.deviceRecording?'ON':'OFF'),{type:'record',id:i.id,uid:i.uid,endpoint:'record',enabled:!i.deviceRecording},i.deviceRecording===true?COLORS.record:COLORS.action,{disabled:!i.connected||typeof i.deviceRecording!=='boolean',active:i.deviceRecording===true,icon:'UnitRecord'});
+  if(assigned)a[19]=key('HUB REC\n'+([2,4].includes(i.recorderStatus)?'ON':'OFF'),{type:'record',id:i.id,uid:i.uid,endpoint:'streamhubRecord',enabled:![2,4].includes(i.recorderStatus)},[2,4].includes(i.recorderStatus)?COLORS.record:COLORS.action,{disabled:!Number.isFinite(i.recorderStatus)||i.recorderStatus===0||(!i.connected&&i.protocolId<0),active:[2,4].includes(i.recorderStatus),icon:'HubRecord'});
   a[21]=key('ROUTE TO\nOUTPUT',{type:'pick',kind:'route',input:i.id,uid:i.uid},COLORS.nav,{glyph:'route'});
-  a[22]=key('IP PROFILE',{type:'pick',kind:'inputProfile',input:i.id,uid:i.uid},COLORS.action,{disabled:i.canLive&&i.connected});
+  const ipAssigned=Number.isInteger(i.protocolId)&&i.protocolId>=0,deviceAssigned=!ipAssigned&&i.connected&&(i.isMojo||i.canLive||/^(PRO|AIR|HE|RACK|DMNG|STUDIO|SST|MOJO)/i.test(i.product||''));
+  if(!deviceAssigned)a[10]=key('SELECT\nINPUT',{type:'pick',kind:'inputProfile',input:i.id,uid:i.uid},COLORS.nav,{glyph:'route',disabled:false});
   if(i.connected&&!i.isMojo&&i.remoteAccessAvailable)a[29]=key('REMOTE\nACCESS',{type:'remoteAccess',id:i.id,uid:i.uid},COLORS.nav,{icon:'Remote'});
   if(!i.isMojo&&i.connected&&i.liveProfiles?.length&&i.liveProfileInstance!==null)a[20]=key('LIVE PROFILE\n'+(i.liveProfiles.find(p=>p.id===i.liveProfileId)?.name||'SELECT'),{type:'pick',kind:'liveProfile',input:i.id,uid:i.uid},COLORS.nav);
   if(i.canCopyLink)a[28]=key('COPY LINK',{type:'pick',kind:'copyLink',asset:'input',input:i.id,uid:i.uid},COLORS.nav,{icon:'Link'});
@@ -133,12 +134,12 @@ function layout(s){
   const details=[{title:kind==='output'?item?.type+' '+item?.id:''+s.selected.id},...(d?.code?[{title:'CODE\n'+d.code}]:[]),...chunks(text).map(title=>({title})),...(matching?[{title:'LAST COMMAND'},...chunks(command.message).map(title=>({title}))]:[])];
   const tab=s.detailsTab||'ALERTS';
   ['CONFIG','STATS','ALERTS'].forEach((title,n)=>a[10+n]=key(title,{type:'detailsTab',tab:title},COLORS.nav,{kind:'tab',active:tab===title}));
-  a[13]=key('REFRESH',{type:'refresh'},COLORS.nav);
+
   if(tab==='ALERTS')list(details,item=>key(item.title,null,color,{kind:'heading'}));
   else{
    const values=tab==='CONFIG'?[{label:'ASSET',value:kind==='output'?item?.type+' '+item?.id:kind==='encoder'?'ENC '+s.selected.id:'INPUT '+s.selected.id},{label:'NAME',value:item?.name},...(item?.configuration||[]),...(item?.streamDetails||[])]:[...(item?.liveStats||[]),...(item?.streamStats||[])];
    const entries=require('./channel-details').tiles(values);
-   list(entries,item=>key(item.title,null,COLORS.info,{kind:'heading'}),tab==='STATS'?'NO CURRENT\nSTATS REPORTED':'NO CONFIG\nREPORTED');
+   list(entries,item=>key(item.title,null,COLORS.info,{...item,kind:'heading'}),tab==='STATS'?'NO CURRENT\nSTATS REPORTED':'NO CONFIG\nREPORTED');
    a[9]=key(tab==='STATS'?(item?.statsTime?'LIVE READOUT':'API READOUT'):'READ ONLY',null,COLORS.muted,{kind:'heading'});
   }
  }else if(s.view==='pick'){
@@ -150,21 +151,21 @@ function layout(s){
   }
   if(s.picker.kind==='multiviewRoute'){
    const p=s.picker,groups=supportedGroups(s);header('ROUTE\nMULTIVIEW');groups.forEach((group,n)=>a[9+n]=key(group,{type:'multiviewRouteGroup',group},COLORS.nav,{kind:'tab',active:group===p.group}));
-   a[12]=p.group==='IP'?key(p.encoder?'ENC '+p.encoder:'SELECT\nENCODER',{type:'pick',kind:'multiviewEncoder'},COLORS.nav):key('DIRECT\nMULTIVIEW',null,COLORS.info,{kind:'heading'});
+   a[12]=p.group==='IP'?key('SELECT\nENCODER'+(p.encoder?'\nENC '+p.encoder:''),{type:'pick',kind:'multiviewEncoder'},'#ffa64d'):key('DIRECT\nMULTIVIEW',null,COLORS.info,{kind:'heading'});
    a[14]=key('CANCEL',{type:'back'},COLORS.nav);a[15]=key('CONFIRM\n'+p.selectedKeys.length,{type:'multiviewRouteConfirm'},COLORS.nav,{disabled:!p.selectedKeys.length});
    if(p.decision){a[4]=key('BACK',{type:'multiviewRouteReview'},COLORS.nav);a[16]=key('ASSIGN\nONLY',{type:'multiviewRouteApply',goLive:false},COLORS.nav);a[18]=key('ASSIGN &\nGO LIVE',{type:'multiviewRouteApply',goLive:true},COLORS.on);a[20]=key(p.encoder?'MULTIVIEW\nENCODER\nOUTPUTS ON':'MULTIVIEW\nOUTPUTS ON',null,COLORS.info,{kind:'heading'});}
    else if(p.group==='IP'&&!p.encoder){a[18]=key('MULTIVIEW\n→ ENCODER\n→ IP',null,COLORS.info,{kind:'heading'});}
    else list(s.data.outputs.filter(o=>outputGroup(o)===p.group),o=>{const assigned=p.group==='IP'?o.encoder===p.encoder&&s.encoders.some(e=>e.id===p.encoder&&e.input===33):o.source===33,selected=p.selectedKeys.includes(o.key);return key(o.type+' '+o.id+'\n'+o.name+'\n'+(assigned?'ASSIGNED':''),{type:'choose',item:{command:{type:'multiviewRouteSelect',key:o.key}}},selected?COLORS.on:COLORS.action,{kind:'asset',active:selected,disabled:assigned||o.locked||!o.powerAvailable});},'NO OUTPUTS');return a;
   }
 
-  const label={routeEncoder:'SELECT ENCODER',inputEncoder:'SELECT ENCODER',encoderRoute:'ROUTE ENCODER',liveProfile:'LIVE PROFILE',copyLink:'COPY LINK',videoReturn:'VIDEO RETURN',route:'ROUTE OUTPUT',outputInput:'SELECT INPUT',encoderInput:'SELECT INPUT',encoderProfile:'CHANGE PROFILE',encoderAdd:'ADD ENCODER',outputAdd:'ADD OUTPUT',inputProfile:'IP PROFILE',camera:'SELECT CAMERA',shutterUnits:'SHUTTER UNITS',multiviewInput:'SELECT INPUT',multiviewEncoder:'SELECT ENCODER'}[s.picker.kind]||'SELECT';
+  const label={routeEncoder:'SELECT ENCODER',inputEncoder:'SELECT ENCODER',encoderRoute:'ROUTE ENCODER',liveProfile:'LIVE PROFILE',copyLink:'COPY LINK',videoReturn:'VIDEO RETURN',route:'ROUTE OUTPUT',outputInput:'SELECT INPUT',encoderInput:'SELECT INPUT',encoderProfile:'CHANGE PROFILE',encoderAdd:'ADD ENCODER',outputAdd:'ADD OUTPUT',inputProfile:'SELECT INPUT',camera:'SELECT CAMERA',shutterUnits:'SHUTTER UNITS',multiviewInput:'SELECT INPUT',multiviewEncoder:'SELECT ENCODER'}[s.picker.kind]||'SELECT';
   const inputPicker=['outputInput','encoderInput'].includes(s.picker.kind),ready=s.picker.readiness!=='NOT READY';
   const routePicker=s.picker.kind==='route';
   const items=s.picker.kind==='liveProfile'?s.picker.items.map(item=>{const input=s.data.inputs.find(i=>i.id===item.command.input&&i.uid===item.command.uid),p=input?.liveProfiles?.find(p=>p.id===item.command.profile),active=p?.id===input?.liveProfileId;return {...item,title:(p?.name||'UNAVAILABLE')+'\n'+(active?'CURRENT':''),active,disabled:!input?.connected||!p||input.liveProfileInstance!==item.command.instance};}):inputPicker?s.picker.items.filter(item=>(item.command?.multiview?!!s.multiview?.enabled:item.ready)===ready):routePicker?s.picker.items.filter(item=>item.group===s.picker.group).map(item=>{const o=s.data.outputs.find(o=>o.key===item.command.key),assigned=s.picker.encoder?o?.encoder===s.picker.encoder&&s.encoders.some(e=>e.id===s.picker.encoder&&e.input===s.picker.input):o?.source===s.picker.input&&!o.encoder;return {...item,title:assigned?o.type+' '+o.id+'\n'+String(o.name).slice(0,12)+'\nALREADY\nASSIGNED':item.title,disabled:assigned||!o||o.locked||!o.powerAvailable};}):s.picker.items;
   header(label,items.length+' OPTIONS');
   if(routePicker&&!s.picker.decision){
    const groups=supportedGroups(s).filter(group=>!s.picker.encoder||group!=='NDI');groups.forEach((group,n)=>a[9+n]=key(group,{type:'routeGroup',group},COLORS.nav,{kind:'tab',active:s.picker.group===group}));
-   a[13]=key(s.picker.encoder?'ENC '+s.picker.encoder:'ADD TO\nENCODER',{type:'pick',kind:'routeEncoder'},COLORS.nav,{glyph:'route'});
+   a[13]=key('SELECT\nENCODER'+(s.picker.encoder?'\nENC '+s.picker.encoder:''),{type:'pick',kind:'routeEncoder'},'#ffa64d',{glyph:'route'});
    a[12]=key(s.picker.selectedKeys.length+' SELECTED',null,COLORS.info,{kind:'heading'});
    a[14]=key('CANCEL',{type:'back'},COLORS.nav);
    a[15]=key('CONFIRM\n'+(s.picker.activationKeys?.length||s.picker.selectedKeys.length)+' OUTPUTS',{type:'routeConfirm'},COLORS.nav,{disabled:!s.picker.selectedKeys.length&&!s.picker.activationKeys?.length});
@@ -191,21 +192,23 @@ function layout(s){
    a[24]=key('OUTPUT\n'+(live?'LIVE':program?'READY':'NOT ROUTED'),null,live?COLORS.danger:COLORS.muted,{kind:'status'});
   }
  } if(s.view==='list'&&s.section!=='MOJO PRO'&&!s.outputBulk&&!s.inputBulk&&!s.encoderBulk){
-  a[15]=key(s.bulk?'EJECT\n'+s.bulk.length+' SELECTED':s.section==='INPUT'?'BULK\nUNASSIGN\n/ EJECT':'BULK\nEJECT',{type:s.bulk?'bulkRun':'bulkStart'},COLORS.nav,{disabled:!!s.bulk&&!s.bulk.length});
-  if(s.section==='INPUT'&&!s.bulk&&s.multiviewAvailable)a[13]=key('MULTIVIEW',{type:'multiview'},COLORS.nav,{icon:'Multiview',iconPosition:'bottom'});
-  if(s.section==='INPUT'&&!s.bulk)a[14]=key('BULK\nON / OFF',{type:'inputBulkStart'},COLORS.nav);
-  if(s.section==='ENCODERS'&&!s.bulk)a[14]=key('BULK\nON / OFF',{type:'encoderBulkStart'},COLORS.nav);
+  a[15]=key(s.bulk?'EJECT\n'+s.bulk.length+' SELECTED':'BULK\nEJECT',{type:s.bulk?'bulkRun':'bulkStart',...(s.section==='INPUT'?{mode:'eject'}:{})},COLORS.nav,{disabled:!!s.bulk&&!s.bulk.length});
+  if(s.section==='INPUT'&&!s.bulk&&s.multiviewAvailable)a[12]=key('MULTIVIEW',{type:'multiview'},COLORS.nav,{icon:'Multiview',iconPosition:'bottom'});
+  if(s.section==='INPUT'&&!s.bulk)a[13]=key('BULK\nON / OFF',{type:'inputBulkStart'},COLORS.nav);
+  if(s.section==='INPUT'&&!s.bulk)a[14]=key('BULK\nUNASSIGN',{type:'bulkStart',mode:'unassign'},COLORS.nav);
+  if(s.section==='ENCODERS'&&!s.bulk){a[13]=key('BULK\nON / OFF',{type:'encoderBulkStart',mode:'toggle'},COLORS.nav);a[14]=key('BULK\nUNASSIGN',{type:'encoderBulkStart',mode:'unassign'},COLORS.nav);}
   if(s.section==='OUTPUT'&&!s.bulk){a[13]=key('BULK\nON / OFF',{type:'outputBulkStart',mode:'toggle'},COLORS.nav);a[14]=key('BULK\nUNASSIGN',{type:'outputBulkStart',mode:'unassign'},COLORS.nav);}
   if(s.bulk){
+   a[15]=key((s.inputBulkMode==='unassign'?'UNASSIGN':'EJECT')+'\n'+s.bulk.length+' SELECTED',{type:'bulkRun'},COLORS.nav,{disabled:!s.bulk.length});
    a[12]=key(s.bulk.length+' SELECTED',null,COLORS.info,{kind:'heading'});
    a[13]=key('CANCEL',{type:'bulkCancel'},COLORS.nav);
-   if(s.bulkConfirm&&s.bulk.some(c=>require('./bulk').isActive(s,c)))a[14]=key('CONFIRM\nLIVE EJECT',{type:'bulkRun',confirmed:true},COLORS.nav);
+   if(s.bulkConfirm&&s.bulk.some(c=>require('./bulk').isActive(s,c)))a[14]=key(s.inputBulkMode==='unassign'?'CONFIRM\nLIVE UNASSIGN':'CONFIRM\nLIVE EJECT',{type:'bulkRun',confirmed:true},COLORS.nav);
    for(let n=16;n<32;n++){
     const k=a[n],c=k.command;if(!c)continue;
     let command,disabled=false;
     if(c.type==='output'){const o=s.data.outputs.find(o=>o.key===c.key);command={type:'ejectOutput',key:c.key};disabled=o.locked||!o.powerAvailable;}
     else if(c.type==='encoder')command={type:'ejectEncoder',id:c.id};
-    else if(['input','mojo'].includes(c.type)){command={type:'ejectInput',id:c.id,uid:c.uid};disabled=false;}
+    else if(['input','mojo'].includes(c.type)){const i=s.data.inputs.find(i=>i.id===c.id&&i.uid===c.uid),unassign=s.inputBulkMode==='unassign';command={type:unassign?'unassignInput':'ejectInput',id:c.id,uid:c.uid};disabled=s.inputBulkMode?!(unassign?require('./bulk').canUnassignInput(i):require('./bulk').canEjectInput(i)):false;if(disabled){a[n]=key('',null,'#000000',{blank:true});continue;}}
     else {a[n]=key('',null,'#000000',{blank:true});continue;}
     k.command={type:'bulkSelect',command};k.disabled=disabled;k.active=s.bulk.some(x=>JSON.stringify(x)===JSON.stringify(command));if(k.active)k.color=COLORS.danger;
    }
@@ -214,8 +217,8 @@ function layout(s){
 
  if(s.view==='list'&&s.section==='ENCODERS'&&s.encoderBulk){
   const bulk=s.encoderBulk;a[12]=key(bulk.items.length+' SELECTED',null,COLORS.info,{kind:'heading'});
-  a[13]=key('CANCEL',{type:'encoderBulkCancel'},COLORS.nav);a[14]=key('CONFIRM\n'+bulk.items.length+' ENCODERS',{type:'encoderBulkRun'},COLORS.nav,{disabled:!bulk.items.length});a[15]=key('TOGGLE\nON / OFF',null,COLORS.info,{kind:'heading'});
-  for(let n=16;n<32;n++){const k=a[n],c=k.command;if(c?.type!=='encoder'){if(c)a[n]=key('',null,'#000000',{blank:true});continue;}const e=s.encoders.find(e=>e.id===c.id),selected=bulk.items.some(x=>x.id===c.id);k.command={type:'encoderBulkSelect',id:c.id};k.active=selected;if(selected)k.color=COLORS.nav;k.title='ENC '+e.id+'\n'+e.name+'\n'+(e.enabled?'ON → OFF':'OFF → ON');}
+  a[13]=key('CANCEL',{type:'encoderBulkCancel'},COLORS.nav);a[14]=key('CONFIRM\n'+bulk.items.length+' ENCODERS',{type:'encoderBulkRun'},COLORS.nav,{disabled:!bulk.items.length});a[15]=key(bulk.mode==='unassign'?'UNASSIGN\nINPUTS':'TOGGLE\nON / OFF',null,COLORS.info,{kind:'heading'});
+  for(let n=16;n<32;n++){const k=a[n],c=k.command;if(c?.type!=='encoder'){if(c)a[n]=key('',null,'#000000',{blank:true});continue;}const e=s.encoders.find(e=>e.id===c.id),selected=bulk.items.some(x=>x.id===c.id);k.command={type:'encoderBulkSelect',id:c.id};k.disabled=bulk.mode==='unassign'&&!e.input;k.active=selected;if(selected)k.color=COLORS.nav;k.title='ENC '+e.id+'\n'+e.name+'\n'+(bulk.mode==='unassign'?(e.input===33?'MULTIVIEW':e.input?'INPUT '+e.input:'UNASSIGNED'):(e.enabled?'ON → OFF':'OFF → ON'));}
  }
  if(s.view==='list'&&s.section==='INPUT'&&s.inputBulk){
   const bulk=s.inputBulk;a[12]=key(bulk.items.length+' SELECTED',null,COLORS.info,{kind:'heading'});

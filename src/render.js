@@ -6,6 +6,8 @@ CAMERA_ICONS.Web='<circle r="14"/><ellipse rx="6" ry="14"/><path d="M-14 0H14M-1
 CAMERA_ICONS.Alert='<path d="M0-14L15 12H-15Z M0-5V3M0 7V8"/>';
 CAMERA_ICONS.Link='<path d="M-3-7L1-11A7 7 0 0 1 11-1L7 3M3 7L-1 11A7 7 0 0 1-11 1L-7-3M-5 5L5-5"/>';
 CAMERA_ICONS.Record='<circle r="9" fill="currentColor"/>';
+CAMERA_ICONS.UnitRecord='<rect x="-12" y="-15" width="24" height="30" rx="4"/><path d="M-6-9h12M-4 9h8"/>';
+CAMERA_ICONS.HubRecord='<rect x="-20" y="-12" width="40" height="11" rx="2"/><rect x="-20" y="2" width="40" height="11" rx="2"/><path d="M-14-7h10M-14 7h10"/><circle cx="12" cy="7" r="3" fill="currentColor" stroke="none"/><circle cx="12" cy="-7" r="3" fill="currentColor" stroke="none"/>';
 CAMERA_ICONS.Intercom='<path d="M-12 3V-2A12 12 0 0 1 12-2V3M-12 1H-7V12H-12ZM7 1H12V12H7ZM12 10V14H3"/>';
 CAMERA_ICONS.VideoReturn='<rect x="-16" y="-11" width="32" height="22" rx="2"/><path d="M-4-6L6 0L-4 6Z M-7 15H7"/>';
 function escapeXml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));}
@@ -26,14 +28,14 @@ function svg(key){
  const accent=key.disabled&&key.kind!=='navigation'?'#69727e':key.color||'#d5dce5';
  const passive=['heading','value','preview'].includes(key.kind);
  const solid=key.kind==='status'||key.active;
- const fill=key.disabled&&key.kind!=='navigation'?'#161b22':solid?accent:key.color==='#ba9cff'?'#33264d':key.kind==='tab'||key.color==='#4c9dff'?'#15345a':key.color==='#ffa64d'?'#4a3018':key.color==='#ff6969'||key.color==='#ff687f'?'#57212b':key.color==='#78df75'||key.color==='#64df96'?'#183e2a':passive?'#10151c':'#13333b';
- const lines=key.stateLabel?[...wrap(String(key.title).split('\n').slice(0,-1).join('\n')).slice(0,3),key.stateLabel]:wrap(key.title),font=lines.length>3?18:21,gap=key.repeat?38:font+5,top=(key.icon&&key.iconPosition!=='bottom'?86:72)-((key.iconPosition==='bottom'?Math.max(2,lines.length):lines.length)-1)*gap/2;
+ const fill=/^#[0-9a-f]{6}$/i.test(key.background||'')?key.background:key.disabled&&key.kind!=='navigation'?'#161b22':solid?accent:key.color==='#ba9cff'?'#33264d':key.kind==='tab'||key.color==='#4c9dff'?'#15345a':key.color==='#ffa64d'?'#4a3018':key.color==='#ff6969'||key.color==='#ff687f'?'#57212b':key.color==='#78df75'||key.color==='#64df96'?'#183e2a':passive?'#10151c':'#13333b';
+ const lines=key.displayLines|| (key.stateLabel?[...wrap(String(key.title).split('\n').slice(0,-1).join('\n')).slice(0,3),key.stateLabel]:wrap(key.title)),font=key.maxFont||(lines.length>3?18:21),gap=key.repeat?38:font+5,top=(key.icon&&key.iconPosition!=='bottom'?86:72)-((key.iconPosition==='bottom'?Math.max(2,lines.length):lines.length)-1)*gap/2;
  const text=lines.map((line,n)=>{
   const value=key.kind==='value'&&n===1,size=key.kind==='add'?88:key.repeat&&n===1?44:value?Math.min(32,118/Math.max(1,line.length)/.66):Math.min(font,118/Math.max(1,line.length)/.68);
-  return '<text x="72" y="'+(top+n*gap)+'" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="'+size+'" font-weight="700" fill="'+escapeXml(key.disabled&&key.kind!=='navigation'?'#8b949f':solid?'#071018':key.stateLabel&&n===lines.length-1?key.stateColor:n===0?accent:'#ffffff')+'">'+escapeXml(line)+'</text>';
+  return '<text x="72" y="'+(top+n*gap)+'" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="'+size+'" font-weight="'+(key.lineStyles?.[n]?.weight??700)+'" fill="'+escapeXml(key.lineStyles?.[n]?.color||(key.disabled&&key.kind!=='navigation'?'#8b949f':solid?'#071018':key.stateLabel&&n===lines.length-1?key.stateColor:n===0?accent:'#ffffff'))+'">'+escapeXml(line)+'</text>';
  }).join('');
  const icon=key.icon&&CAMERA_ICONS[key.icon]?'<g transform="translate(72 '+(key.iconPosition==='bottom'?107:26)+')" fill="none" color="'+(solid?'#ffffff':accent)+'" stroke="'+(solid?'#ffffff':accent)+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'+CAMERA_ICONS[key.icon]+'</g>':'';
- const border='<rect x="4" y="4" width="136" height="136" rx="13" fill="'+fill+'" stroke="'+accent+'" stroke-width="'+(solid?4:passive?1:3)+'"/>';
+ const border=key.textOnly?'':'<rect x="4" y="4" width="136" height="136" rx="13" fill="'+fill+'" stroke="'+accent+'" stroke-width="'+(solid?4:passive?1:3)+'"/>';
  return '<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144">'+base+border+icon+text+'</svg>';
 }
 function image(key){return key.kind==='preview'&&!key.overlay&&!key.notice&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\r\n]+$/.test(key.thumbnail||'')?key.thumbnail:'data:image/svg+xml;base64,'+Buffer.from(svg(key)).toString('base64');}

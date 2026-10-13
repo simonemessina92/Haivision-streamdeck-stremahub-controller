@@ -6,7 +6,7 @@ The plugin includes video previews, source routing, recording, intercom, video r
 
 ## Download and install
 
-**[Download v0.17.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.17.0/haivision-streamdeck-streamhub-plugin-v0.17.0.zip)**
+**[Download v0.18.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.18.0/haivision-streamdeck-streamhub-plugin-v0.18.0.zip)**
 
 You need Windows 10 or later, Stream Deck app 7.1 or later, and either a **Stream Deck XL** or **Stream Deck Mobile configured with 32 keys in an 8 x 4 layout**.
 
@@ -31,13 +31,17 @@ Temporary Mobile disconnections preserve the saved StreamHub access details. Whe
 
 ## Switching StreamHubs
 
-Press **ADD STREAMHUB**, then configure the new unit from **ONLINE / OFFLINE** in the app. **NEXT HUB** cycles through all saved units in the same panel; the name above ONLINE shows which one you are controlling. There is no fixed limit on saved units.
+Press **ADD STREAMHUB**, then configure the new unit from **ONLINE / OFFLINE** in the app. **NEXT STREAMHUB** cycles through all saved units in the same panel and shows the selected unit's position in the list; the name above ONLINE shows which one you are controlling. There is no fixed limit on saved units.
 
 **PAGE** moves between pages of inputs, outputs or encoders within the current unit.
 
 ## Hub details and remote access
 
-Press ONLINE / OFFLINE on the device to view hub information, system readings and reported licenses. OPEN WEB GUI opens the default browser on the Windows PC; choose HTTPS 443, HTTP 8888 or a custom browser URL in the connection settings. RECONNECT restarts the selected hub session without forgetting its saved access details.
+Press ONLINE / OFFLINE on the device to view hub information, system readings and reported licenses. One **INFO / SYSTEM / LICENSES** key cycles through these views, highlighting the current view in white bold text. **PAGE** cycles through additional readout pages when needed.
+
+INFO gives each field its own horizontal row: the name is followed by large value segments. IPv4 addresses use one key per octet and MAC addresses one per byte. ADDRESS separates the protocol, host and explicit port. PUBLIC HOST and HOSTNAME distribute the full name, including its dots, across balanced segments with a consistent font size. SYSTEM places labels and values side by side; six available metrics fit on one page, with percentages and capacity units included.
+
+OPEN WEB GUI opens the default browser on the Windows PC; choose HTTPS 443, HTTP 8888 or a custom browser URL in the connection settings. RECONNECT restarts the selected hub session without forgetting its saved access details. **NEXT STREAMDECK PAGE** targets the second page of the supplied StreamHub XL profile. Add that page in the Stream Deck app if you want to use it, and place a native Previous Page action there to return.
 
 REMOTE ACCESS opens a compatible transmitter’s remote interface when the connected server and account allow it.
 
@@ -49,13 +53,17 @@ REST API access uses HTTP 8893 or HTTPS 8896; web login and previews use HTTP 88
 - **LIVE PROFILE** on a compatible connected transmitter selects an existing encoding preset. The current preset is highlighted; changing it does not start the input.
 - **ROUTE TO OUTPUT** on an input offers optional **ADD TO ENCODER**. Choose an encoder, select SDI/IP destinations, then **ASSIGN ONLY** or **ASSIGN & GO LIVE**. NDI stays available on direct routing.
 - **BULK ON/OFF** in ENCODERS toggles selected encoders after confirmation, preserving their sources and profiles.
+- **BULK UNASSIGN** in ENCODERS clears selected input sources while retaining encoding profiles, power states and output assignments.
+- INPUTS has separate **BULK UNASSIGN** for assigned IP input profiles and **BULK EJECT** for connected transmitters and Mojo devices. Select compatible inputs and confirm; live inputs require the additional live-operation confirmation.
+- **SELECT INPUT**, beside the input status, chooses an IP input profile for an eligible input slot. Connected transmitters and Mojo devices do not expose this selector. READY, LIVE and OFFLINE use colored text on a black background.
 - **MULTIVIEW**, beside input bulk controls, builds a 1 x 1 to 4 x 4 grid. Select sources across two pages of 16 inputs. Cell previews appear when their sources are live; BASIC hides the information overlays.
 - Route Multiview directly to SDI or NDI. IP routing requires an assigned encoding profile; passthrough is excluded. Choose **ASSIGN ONLY** to keep the current power states, or **ASSIGN & GO LIVE** to enable the required channels.
+- Multiview power is in the top row; row/column controls, BASIC and ROUTE TO OUTPUT are grouped on the right. **SELECT ENCODER** uses the same orange control in input routing and Multiview IP routing.
 - Mojo Pro provides camera selection, manual/auto controls, fixed shutter steps, zoom reset and 2 dB audio gain steps. Microphone selection stays in the phone app.
 
 Available controls and statistics depend on the StreamHub version, license and connected device. Profile and routing changes wait for server or device confirmation.
 
-SYSTEM shows CPU usage, RAM usage/capacity and disk usage/capacity in MiB/GiB when reported. Device-detail requests stop for disconnected inputs and pause when switching to another saved hub.
+SYSTEM shows CPU usage, RAM usage/capacity and disk usage/capacity in MiB/GiB when reported. Readouts refresh automatically; redundant REFRESH keys have been removed from STATUS DETAILS and Multiview. Unit recording and hub recording have distinct device and server icons. Device-detail requests stop for disconnected inputs and pause when switching to another saved hub.
 
 ## Saved access details
 
@@ -67,7 +75,7 @@ Do not share your personal settings or backups.
 
 ## Building from source
 
-`main` is the stable branch; `develop` is for ongoing work. Version **0.17.0** is the current stable release, verified with Stream Deck XL and two registered Mobile devices.
+`main` is the stable branch; `develop` is for ongoing work. Version **0.18.0** is the current golden release, approved by the project owner after local Stream Deck testing. Stream Deck XL and two registered Mobile devices were verified in previous testing. The v0.17.0 release remains available.
 
 Install Node.js 24, then run:
 

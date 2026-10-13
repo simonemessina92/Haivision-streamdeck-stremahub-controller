@@ -119,7 +119,7 @@ test('a stale encoder add cannot replace an assigned profile',async()=>{
 });
 test('black backgrounds, navigation gutters and separate camera pages',async()=>{
  const {svg}=require(root+'/render'),e=new Engine(createClient,()=>{},()=>{throw Error('Network in demo');});await e.configure({demo:true});
- let keys=e.keys();assert.equal(keys[7].kind,'status');assert.match(svg(keys[0]),/fill="#000000"/);assert.match(svg(keys[14]),/fill="#000000"/);assert.equal(keys[14].command.type,'inputBulkStart');
+ let keys=e.keys();assert.equal(keys[7].kind,'status');assert.match(svg(keys[0]),/fill="#000000"/);assert.match(svg(keys[14]),/fill="#000000"/);assert.equal(keys[13].command.type,'inputBulkStart');
  await e.execute({type:'mojo',id:1,uid:'demo-0'});keys=e.keys();assert.equal(keys[14].blank,true);assert.equal(keys[10].command.param,'WB');assert.equal(keys[26].command.param,'ShutterSpeed');assert.equal(keys[25].kind,'preview');assert.equal(keys[9].kind,'status');
  await e.execute(keys[6].command);assert.equal(e.keys()[10].command.param,'Zoom');assert.equal(e.keys()[26].command.param,'AudioGain');
 });
@@ -325,13 +325,13 @@ test('real bulk eject accepts arbitrary input and encoder IDs without output-ind
 });
 test('bulk confirmation is adjacent to ONLINE only for selected LIVE items and resets on selection change',async()=>{
  const e=new Engine(createClient);await e.configure({demo:true});
- assert.equal(e.keys()[15].command.type,'bulkStart');assert.equal(e.keys()[12].blank,true);
+ assert.equal(e.keys()[15].command.type,'bulkStart');assert.equal(e.keys()[12].command.type,'multiview');
  await e.execute({type:'section',section:'MOJO PRO'});assert.equal(e.keys()[15].blank,true);
  await e.execute({type:'section',section:'INPUT'});await e.execute({type:'bulkStart'});
  const i=e.s.data.inputs[1];i.enabled=true;i.status=2;
  await e.execute({type:'bulkSelect',command:{type:'ejectInput',id:i.id,uid:i.uid}});
  await e.execute({type:'bulkRun'});assert.equal(i.connected,true);assert.equal(e.keys()[14].command.confirmed,true);
- await e.execute({type:'bulkRun',confirmed:true});assert.equal(i.connected,false);assert.equal(e.keys()[14].command.type,'inputBulkStart');
+ await e.execute({type:'bulkRun',confirmed:true});assert.equal(i.connected,false);assert.equal(e.keys()[13].command.type,'inputBulkStart');
  await e.execute({type:'bulkStart'});const idle=e.s.data.inputs[3];idle.enabled=false;idle.status=0;
  await e.execute({type:'bulkSelect',command:{type:'ejectInput',id:idle.id,uid:idle.uid}});
  await e.execute({type:'bulkRun'});assert.equal(idle.connected,false);assert.equal(e.s.bulk,null);
@@ -496,7 +496,7 @@ test('SELECT INPUT preserves OFF and ON without playback or power writes for out
 
 test('input terminal controls use icons and native colors with compatible video return selection',async()=>{
  const {svg}=require(root+'/render'),e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'input',id:1,uid:'demo-0'});
- assert.equal(e.keys()[18].icon,'Record');assert.equal(e.keys()[19].icon,'Record');
+ assert.equal(e.keys()[18].icon,'UnitRecord');assert.equal(e.keys()[19].icon,'HubRecord');
  assert.equal(e.keys()[26].icon,'Intercom');assert.equal(e.keys()[27].icon,'VideoReturn');
  assert.equal(e.keys()[27].color,'#ffa64d');
  await e.execute(e.keys()[26].command);assert.equal(e.s.data.inputs[0].intercom,true);assert.match(svg(e.keys()[26]),/fill="#4c9dff"/);
@@ -556,7 +556,7 @@ test('input navigation visits empty unassigned slots and wraps while keeping IP 
  await e.execute({type:'input',id:1,uid:'demo-0'});
  for(let id=2;id<=32;id++){
   await e.execute(e.keys()[24].command);assert.equal(e.s.selected.id,id);
-  assert.equal(e.keys()[22].command.kind,'inputProfile');assert.equal(e.keys()[22].disabled,false);
+  assert.equal(e.keys()[10].command.kind,'inputProfile');assert.equal(e.keys()[10].disabled,false);
  }
  await e.execute(e.keys()[24].command);assert.equal(e.s.selected.id,1);
  await e.execute(e.keys()[8].command);assert.equal(e.s.selected.id,32);
@@ -725,7 +725,7 @@ test('WB never presents a remembered preset as a current value when the device o
 
 
 test('input bulk toggles mixed states across pages, leaves assignments intact, and excludes unavailable slots',async()=>{
- const e=new Engine(createClient);await e.configure({demo:true});assert.match(e.keys()[15].title,/UNASSIGN/);await e.execute(e.keys()[14].command);
+ const e=new Engine(createClient);await e.configure({demo:true});assert.match(e.keys()[14].title,/UNASSIGN/);await e.execute(e.keys()[13].command);
  const a=e.s.data.inputs[0],b=e.s.data.inputs[17];a.connected=true;a.enabled=true;b.connected=true;b.enabled=false;
  await e.execute({type:'inputBulkSelect',id:a.id,uid:a.uid});await e.execute({type:'page',pages:2});await e.execute({type:'inputBulkSelect',id:b.id,uid:b.uid});assert.equal(e.s.inputBulk.items.length,2);
  const keys=e.keys();assert.ok(keys.some(k=>k.title.includes('OFF → ON')));await e.execute({type:'inputBulkRun'});
@@ -775,9 +775,9 @@ test('GO LIVE activates all selected SDI outputs, and partial activation retries
 test('input recording and terminal controls appear only for assigned appropriate source types',async()=>{
  const e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'input',id:1,uid:'demo-0'});const i=e.s.data.inputs[0];
  i.connected=false;i.protocolId=-1;for(const slot of [18,19,26,27])assert.equal(e.keys()[slot].blank,true);
- i.protocolId=0;i.isMojo=false;i.canLive=false;assert.equal(e.keys()[19].icon,'Record');for(const slot of [18,26,27])assert.equal(e.keys()[slot].blank,true);
+ i.protocolId=0;i.isMojo=false;i.canLive=false;assert.equal(e.keys()[19].icon,'HubRecord');for(const slot of [18,26,27])assert.equal(e.keys()[slot].blank,true);
  i.connected=true;for(const slot of [18,26,27])assert.equal(e.keys()[slot].blank,true);
- i.protocolId=-1;i.canLive=true;assert.equal(e.keys()[18].icon,'Record');assert.equal(e.keys()[26].icon,'Intercom');assert.equal(e.keys()[27].icon,'VideoReturn');
+ i.protocolId=-1;i.canLive=true;assert.equal(e.keys()[18].icon,'UnitRecord');assert.equal(e.keys()[26].icon,'Intercom');assert.equal(e.keys()[27].icon,'VideoReturn');
 });
 test('shutter uses the requested discrete list and audio adjusts on an integer two dB grid',()=>{
  const RCP=require(root+'/rcp'),{demo}=require(root+'/demo'),camera=demo().camera;

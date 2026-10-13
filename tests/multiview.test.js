@@ -9,14 +9,14 @@ test('Multiview resizes by coordinates, keeps overlapping cells and clears remov
  assert.throws(()=>model.decode({...original,videoChannelIndexes:'[33,0,0,0]'}),/assignments/);assert.deepEqual(model.decode({enable:false,nbRow:1,nbCol:1,videoChannelIndexes:''}).cells,[0]);
 });
 test('Multiview editor has a real 4 x 4 grid, bounded controls and all-input source selection',async()=>{
- const e=new Engine(createClient);await e.configure({demo:true});assert.equal(e.keys()[13].title,'MULTIVIEW');assert.equal(e.keys()[13].color,'#ba9cff');assert.equal(e.keys()[14].command.type,'inputBulkStart');
- await e.execute(e.keys()[13].command);assert.equal(e.s.view,'multiview');assert.equal(e.keys()[12].disabled,true);assert.equal(e.keys()[20].disabled,true);
- for(let n=0;n<3;n++){await e.execute(e.keys()[14].command);await e.execute(e.keys()[22].command);}assert.equal(e.s.multiview.rows,4);assert.equal(e.s.multiview.columns,4);assert.equal(e.keys()[14].disabled,true);assert.equal(e.keys()[22].disabled,true);
+ const e=new Engine(createClient);await e.configure({demo:true});assert.equal(e.keys()[12].title,'MULTIVIEW');assert.equal(e.keys()[12].color,'#ba9cff');assert.equal(e.keys()[13].command.type,'inputBulkStart');
+ await e.execute(e.keys()[12].command);assert.equal(e.s.view,'multiview');assert.equal(e.keys()[20].disabled,true);assert.equal(e.keys()[28].disabled,true);
+ for(let n=0;n<3;n++){await e.execute(e.keys()[22].command);await e.execute(e.keys()[30].command);}assert.equal(e.s.multiview.rows,4);assert.equal(e.s.multiview.columns,4);assert.equal(e.keys()[22].disabled,true);assert.equal(e.keys()[30].disabled,true);
  for(let r=0;r<4;r++)for(let c=0;c<4;c++)assert.equal(e.keys()[r*8+c].command.cell,r*4+c);
  await e.execute(e.keys()[27].command);assert.equal(e.s.picker.kind,'multiviewInput');assert.equal(e.s.picker.items.length,e.s.data.inputs.length+1);const source=e.s.picker.items.find(i=>i.command.input===3);await e.execute({type:'choose',item:source});assert.equal(e.s.view,'multiview');assert.equal(e.s.multiview.cells[15],3);assert.equal(e.s.multiview.enabled,false);
- await e.execute(e.keys()[15].command);assert.equal(e.s.multiview.enabled,true);await e.execute(e.keys()[15].command);assert.equal(e.s.multiview.enabled,false);
+ await e.execute(e.keys()[6].command);assert.equal(e.s.multiview.enabled,true);await e.execute(e.keys()[6].command);assert.equal(e.s.multiview.enabled,false);
  await e.execute(e.keys()[27].command);await e.execute({type:'choose',item:e.s.picker.items[0]});assert.equal(e.s.multiview.cells[15],0);
- await e.execute(e.keys()[4].command);assert.equal(e.s.view,'list');e.s.multiviewAvailable=false;assert.equal(e.keys()[13].blank,true);
+ await e.execute(e.keys()[4].command);assert.equal(e.s.view,'list');e.s.multiviewAvailable=false;assert.equal(e.keys()[12].blank,true);
 });
 test('native Multiview uses setObjectConfig and confirms real readback while preserving server settings',async()=>{
  const p=new NativePreviews();p.verified=true;p.license={multiView:true};let server=config(),sent=[];const extra={config:async root=>{assert.equal(root,'mosaic');return structuredClone(server);}};
@@ -34,7 +34,7 @@ test('Multiview does not accept a confirmation returned after the connection cha
 });
 
 test('native configuration exposes Multiview only when available and licensed',async()=>{
- const e=new Engine(createClient);await e.configure({demo:true});e.s.demo=false;e.native={verified:true,license:{multiView:true},config:{mosaic:config()}};e.syncMultiview();assert.equal(e.s.multiviewAvailable,true);assert.equal(e.s.multiview.rows,2);e.native.license.multiView=false;e.syncMultiview();assert.equal(e.s.multiviewAvailable,false);assert.equal(e.keys()[13].blank,true);
+ const e=new Engine(createClient);await e.configure({demo:true});e.s.demo=false;e.native={verified:true,license:{multiView:true},config:{mosaic:config()}};e.syncMultiview();assert.equal(e.s.multiviewAvailable,true);assert.equal(e.s.multiview.rows,2);e.native.license.multiView=false;e.syncMultiview();assert.equal(e.s.multiviewAvailable,false);assert.equal(e.keys()[12].blank,true);
 });
 
 test('Multiview input picker uses two pages of sixteen channels with Page, Back and Unassign only',async()=>{
@@ -50,10 +50,10 @@ test('Multiview previews are LIVE-only and Basic hides label overlays',async()=>
  e.s.data.inputs[2].status=0;e.syncMultiviewPreviews();assert.equal(e.keys()[0].thumbnail,undefined);assert.deepEqual(subscriptions.at(-1),[]);
 });
 test('Multiview IP routing requires an encoder and assignment does not enable any device',async()=>{
- const e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'multiview'});await e.execute(e.keys()[28].command);assert.equal(e.s.picker.kind,'multiviewRoute');
+ const e=new Engine(createClient);await e.configure({demo:true});await e.execute({type:'multiview'});await e.execute(e.keys()[31].command);assert.equal(e.s.picker.kind,'multiviewRoute');
  await e.execute({type:'multiviewRouteGroup',group:'IP'});assert.equal(e.keys()[12].title,'SELECT\nENCODER');await e.execute(e.keys()[12].command);const encoder=e.s.picker.items.find(i=>i.command.encoder===2);assert.equal(encoder.disabled,false);assert.equal(e.s.picker.items.find(i=>i.command.encoder===1).disabled,true);await e.execute({type:'choose',item:encoder});assert.equal(e.s.picker.encoder,2);
  const output=e.s.data.outputs.find(o=>o.type==='IP');await e.execute({type:'choose',item:{command:{type:'multiviewRouteSelect',key:output.key}}});await e.execute({type:'multiviewRouteConfirm'});await e.execute({type:'multiviewRouteApply',goLive:false});assert.equal(e.s.view,'multiview');assert.equal(output.encoder,2);assert.equal(output.source,null);assert.equal(output.enabled,false);assert.equal(e.s.encoders[1].input,33);assert.equal(e.s.encoders[1].enabled,false);assert.equal(e.s.multiview.enabled,false);
- await e.execute(e.keys()[28].command);await e.execute({type:'multiviewRouteGroup',group:'NDI'});const ndi=e.s.data.outputs.find(o=>o.type==='NDI');await e.execute({type:'choose',item:{command:{type:'multiviewRouteSelect',key:ndi.key}}});await e.execute({type:'multiviewRouteApply',goLive:true});assert.equal(ndi.source,33);assert.equal(ndi.enabled,true);assert.equal(e.s.multiview.enabled,true);
+ await e.execute(e.keys()[31].command);await e.execute({type:'multiviewRouteGroup',group:'NDI'});const ndi=e.s.data.outputs.find(o=>o.type==='NDI');await e.execute({type:'choose',item:{command:{type:'multiviewRouteSelect',key:ndi.key}}});await e.execute({type:'multiviewRouteApply',goLive:true});assert.equal(ndi.source,33);assert.equal(ndi.enabled,true);assert.equal(e.s.multiview.enabled,true);
 });
 test('native Multiview routing uses input 33 directly for physical outputs and an encoder for IP',async()=>{
  const p=new NativePreviews();p.verified=true;p.license={multiView:true};const roots={mosaic:config(),enc:{'1':{enable:false,inputIndex:0,encoderProfileId:0}},basebandPlayer:{'1':{name:'SDI',outputOrder:1,enable:false,channelIndex:-1,other:'KEEP'}},streamingOutput:{'5':{name:'IP',outputOrder:1,enable:false,channelIndex:0,encoderIndex:-1}}};const sent=[],confirmed=[];
