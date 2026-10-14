@@ -239,15 +239,30 @@ class NativePreviews{
   const plans=[];
   for(const [root,rows]of groups){
    const config=await extra.config(root);
-   for(const o of rows){const row=config[o.configIndex];if(!row||[true,1,'1'].includes(row.lockstate)||Number(row.outputOrder)<0||row.name!==o.name)throw Error('Output changed; review the selection');}
-   // Optional encoderIndex is cleared only on presets which actually expose it.
-   if(root==='streamingOutput'){
-    for(const withEncoder of [false,true]){const members=rows.filter(o=>('encoderIndex' in config[o.configIndex])===withEncoder);if(members.length)plans.push({root,rows:members,patch:{channelIndex:-1,...(withEncoder?{encoderIndex:-1}:{})}});}
-   }else plans.push({root,rows,patch:{channelIndex:-1}});
+   for(const o of rows){const row=config[o.configIndex];if(!row||[true,1,'1'].includes(row.lockstate)||Number(row.outputOrder)<0||row.name!==o.name)throw Error('Output changed; review the selection');if(o.encoder&&!('encoderIndex'in row))throw Error('Output encoder assignment is not exposed by this server');}
+   // Every output type can have an encoder route. Preserve schemas without that field.
+   for(const withEncoder of [false,true]){const members=rows.filter(o=>('encoderIndex' in config[o.configIndex])===withEncoder);if(members.length)plans.push({root,rows:members,patch:{channelIndex:-1,...(withEncoder?{encoderIndex:-1}:{})},expected:Object.fromEntries(members.map(o=>[o.configIndex,config[o.configIndex]]))});}
   }
   for(const plan of plans){
    if(generation!==this.generation||!this.verified)throw Error('StreamHub connection changed');
-   await this.setConfigRows(plan.root,plan.rows.map(o=>o.configIndex),plan.patch,extra);
+   try{await this.setConfigRows(plan.root,plan.rows.map(o=>o.configIndex),plan.patch,extra,plan.expected);}
+   catch(error){
+    if(!/^StreamHub did not confirm /.test(error.message)||typeof extra.request!=='function')throw error;
+    // Some servers retain encoder bindings after a native bulk update. Retry only the
+    // selected route fields through the already supported REST item API, with fresh guards.
+    for(const o of plan.rows)for(const field of Object.keys(plan.patch)){
+     if(generation!==this.generation||!this.verified)throw Error('StreamHub connection changed');
+     const row=(await extra.config(plan.root))[o.configIndex],before=plan.expected[o.configIndex];
+     if(generation!==this.generation||!this.verified)throw Error('StreamHub connection changed');
+     if(!row||['name','enable','outputOrder','lockstate'].some(key=>JSON.stringify(row[key])!==JSON.stringify(before[key]))||['channelIndex','encoderIndex'].some(key=>key in before&&Number(row[key])!==-1&&Number(row[key])!==Number(before[key])))throw Error('Output assignment changed; REST retry stopped');
+     if(Number(row[field])===-1)continue;
+     await extra.request('/config/item',{item:plan.root+'.'+o.configIndex+'.'+field,value:-1});
+    }
+    let confirmed=false;for(let attempt=0;attempt<4;attempt++){const current=await extra.config(plan.root);
+     if(generation!==this.generation||!this.verified)throw Error('StreamHub connection changed before confirmation');
+     if(plan.rows.every(o=>Object.keys(plan.patch).every(field=>Number(current[o.configIndex]?.[field])===-1))){confirmed=true;break;}await new Promise(resolve=>setTimeout(resolve,200));}
+    if(!confirmed)throw Error('StreamHub did not confirm output unassign after REST retry');
+   }
    onConfirmed(plan.rows.map(o=>o.key));
   }
  }
@@ -286,17 +301,18 @@ class NativePreviews{
   }
   throw Error('StreamHub did not confirm the Multiview change');
  }
- async setConfigRows(root,indices,patch,extra){
+ async setConfigRows(root,indices,patch,extra,expected=null){
  const fields={enc:['enable','inputIndex','encoderProfileId'],inputProtocol:['channelProfileId'],channelProfile:['videoIFBEncoderIdx','videoIFBSourceIdx'],basebandPlayer:['channelIndex','encoderIndex','enable'],NDIOutput:['channelIndex','encoderIndex','enable'],streamingOutput:['channelIndex','encoderIndex','enable']};
  if(!fields[root]||Object.keys(patch).some(k=>!fields[root].includes(k))||indices.some(id=>!/^\d+$/.test(String(id))))throw Error('Configuration command is not allowed');
  if(!this.verified||this.ws?.readyState!==1)throw Error('StreamHub web connection unavailable');
  const generation=this.generation,config=await extra.config(root),next=structuredClone(config);
- for(const id of indices){if(!next[id])throw Error('Configuration changed');Object.assign(next[id],patch);}
+ for(const id of indices){if(!next[id])throw Error('Configuration changed');if(expected?.[id]&&['name','channelIndex','encoderIndex','outputOrder','enable','lockstate'].some(field=>JSON.stringify(next[id][field])!==JSON.stringify(expected[id][field])))throw Error('Output assignment changed; review the selection');Object.assign(next[id],patch);}
  if(generation!==this.generation||!this.verified)throw Error('StreamHub connection changed');
  this.ws.send('42'+JSON.stringify(['setProfileConfig',root,false,JSON.stringify({[root]:next})]));
  for(let n=0;n<24;n++){
   if(generation!==this.generation||!this.verified)throw Error('StreamHub connection changed before confirmation');
   const current=await extra.config(root);
+  if(generation!==this.generation||!this.verified)throw Error('StreamHub connection changed before confirmation');
   if(indices.every(id=>Object.entries(patch).every(([field,value])=>typeof value==='boolean'?[true,1,'1'].includes(current[id]?.[field])===value:Number(current[id]?.[field])===value))){this.config={...this.config,[root]:current};this.onDevices();return;}
   await new Promise(resolve=>setTimeout(resolve,150));
  }

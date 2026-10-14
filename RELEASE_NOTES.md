@@ -1,19 +1,18 @@
-# v0.18.0 — Golden release
+# v0.18.1 — Golden bugfix release
 
-For Stream Deck XL and Stream Deck Mobile using 32 keys in an 8 x 4 layout. Promotes the locally approved 0.18.0 development version to stable.
+Fixes OUTPUTS > BULK UNASSIGN leaving an encoder attached to SDI or IP outputs after routing an input through that encoder.
 
-- Replace the three hub-detail tabs with one INFO / SYSTEM / LICENSES key. Each press changes the view; the current view is highlighted in white bold text.
-- Give INFO fields horizontal label/value rows with large text and automatic pagination. IPv4 uses four octet keys, MAC uses six byte keys, and ADDRESS separates protocol, host and port.
-- Balance PUBLIC HOST and HOSTNAME across up to seven value keys, preserving all dots and using one font size across the row. The layout adapts to the actual reported name.
-- Fit six SYSTEM measurements into twelve keys on one page. Labels use multiple lines, percentages include %, and capacities include MiB/GiB. Readouts continue to refresh automatically.
-- Add encoder BULK UNASSIGN, clearing only the selected input sources while retaining profiles, power states and output assignments. Fresh checks reject changed assignments before writing.
-- Separate input BULK UNASSIGN for assigned IP profiles from BULK EJECT for connected transmitters and Mojo devices, retaining selection and live-operation confirmation.
-- Place SELECT INPUT beside the input status for eligible IP profile slots. Show READY/LIVE/OFFLINE as colored text on black.
-- Rename NEXT HUB to NEXT STREAMHUB and show the selected unit's position. Add NEXT STREAMDECK PAGE in hub details for the second page of the supplied profile, when that page has been added in the Stream Deck app.
-- Reorganize Multiview controls, standardize the orange SELECT ENCODER controls, distinguish unit/hub recording icons and remove redundant REFRESH keys.
+- Clear both direct input and encoder assignments on selected SDI, NDI and IP outputs. Presets without an encoder field retain their original schema.
+- Recognize numeric indices returned as text, including encoder 1 represented by index "0". Preserve SDI encoder assignments in the readout when runtime output information is unavailable.
+- Allow supported REST encoder-assignment writes for physical and NDI outputs as well as IP outputs.
+- Check the current assignment before writing and reject confirmations from a replaced connection. Reread the complete output assignment before declaring success; incomplete outputs remain selected for retry.
+- If the native update leaves an encoder attached, retry only the selected routing fields through the supported REST item API. Stop the retry if the output or its assignment has changed.
+- Preserve output profiles, output power/order, unrelated outputs and each encoder's source, profile and power state.
 
-192 automated tests pass, along with Elgato validation and installer packaging. The project owner approved the local version for publication. Existing connection settings, profiles, previews, routing, recording and Mojo Pro controls are retained.
+207 automated tests pass, including SDI/IP operations through both native and REST paths, numeric-string indices, missing SDI runtime information, rejected writes, guarded retry and incomplete confirmations. Elgato validation and installer packaging pass.
 
-Windows 10+, Stream Deck app 7.1+ and an XL or Mobile Pro 32-key layout are required. Hub360-managed units remain unvalidated. Saved access details stay local to the PC and are not included in the distributed profile.
+The project owner confirmed that the local fix works and approved publication. Additional testing on the Haibox using the GitHub release download is planned. Existing v0.18.0 controls and layouts are retained.
 
-The previous v0.17.0 release remains available.
+Windows 10+, Stream Deck app 7.1+ and Stream Deck XL or Mobile Pro with 32 keys in an 8 x 4 layout are required. Hub360-managed units remain unvalidated. Connection details remain local and are not included in the distributed profile.
+
+The previous v0.18.0 release remains available.

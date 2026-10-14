@@ -6,7 +6,7 @@ The plugin includes video previews, source routing, recording, intercom, video r
 
 ## Download and install
 
-**[Download v0.18.0 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.18.0/haivision-streamdeck-streamhub-plugin-v0.18.0.zip)**
+**[Download v0.18.1 ZIP](https://github.com/simonemessina92/Haivision-streamdeck-stremahub-controller/releases/download/v0.18.1/haivision-streamdeck-streamhub-plugin-v0.18.1.zip)**
 
 You need Windows 10 or later, Stream Deck app 7.1 or later, and either a **Stream Deck XL** or **Stream Deck Mobile configured with 32 keys in an 8 x 4 layout**.
 
@@ -54,6 +54,7 @@ REST API access uses HTTP 8893 or HTTPS 8896; web login and previews use HTTP 88
 - **ROUTE TO OUTPUT** on an input offers optional **ADD TO ENCODER**. Choose an encoder, select SDI/IP destinations, then **ASSIGN ONLY** or **ASSIGN & GO LIVE**. NDI stays available on direct routing.
 - **BULK ON/OFF** in ENCODERS toggles selected encoders after confirmation, preserving their sources and profiles.
 - **BULK UNASSIGN** in ENCODERS clears selected input sources while retaining encoding profiles, power states and output assignments.
+- **BULK UNASSIGN** in OUTPUTS disconnects both direct input and encoder routes on selected SDI, NDI and IP outputs. Output profiles, power states and encoder input/profile assignments are retained. The plugin rereads the configuration before confirming success; incomplete operations remain selected for retry. If a native update leaves an encoder assigned, a guarded REST retry clears only the selected routing fields.
 - INPUTS has separate **BULK UNASSIGN** for assigned IP input profiles and **BULK EJECT** for connected transmitters and Mojo devices. Select compatible inputs and confirm; live inputs require the additional live-operation confirmation.
 - **SELECT INPUT**, beside the input status, chooses an IP input profile for an eligible input slot. Connected transmitters and Mojo devices do not expose this selector. READY, LIVE and OFFLINE use colored text on a black background.
 - **MULTIVIEW**, beside input bulk controls, builds a 1 x 1 to 4 x 4 grid. Select sources across two pages of 16 inputs. Cell previews appear when their sources are live; BASIC hides the information overlays.
@@ -75,7 +76,7 @@ Do not share your personal settings or backups.
 
 ## Building from source
 
-`main` is the stable branch; `develop` is for ongoing work. Version **0.18.0** is the current golden release, approved by the project owner after local Stream Deck testing. Stream Deck XL and two registered Mobile devices were verified in previous testing. The v0.17.0 release remains available.
+`main` is the stable branch; `develop` is for ongoing work. Version **0.18.1** is the current golden release, approved by the project owner after local testing of the SDI/IP output unassign fix. Additional testing on the Haibox using the GitHub download is planned. Stream Deck XL and two registered Mobile devices were verified in previous testing. The v0.18.0 release remains available.
 
 Install Node.js 24, then run:
 

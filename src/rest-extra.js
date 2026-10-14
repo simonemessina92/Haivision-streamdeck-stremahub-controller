@@ -4,7 +4,7 @@ class Extra {
  constructor(connection,fetchFn=globalThis.fetch){this.connection=connection;this.fetch=fetchFn;this.capacity=null;}
  async request(path,body){
   const c=this.connection(),u=new URL(c.base+path);u.searchParams.set('api_key',c.key);
-  let r;try{r=await this.fetch(u,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,redirect:'error',signal:AbortSignal.timeout(8000)});}catch{throw Error('Encoder API connection failed');}
+  let r;try{r=await this.fetch(u,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,cache:'no-store',redirect:'error',signal:AbortSignal.timeout(8000)});}catch{throw Error('Encoder API connection failed');}
   if(!r.ok)throw Error('API encoder HTTP '+r.status);
   const d=await r.json();if(d.success===false||d.error||typeof d.res==='number'&&d.res<0)throw Error('Encoder command rejected');return d;
  }

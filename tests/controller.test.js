@@ -30,6 +30,20 @@ function fixture(){
  };
  return {fetch,requests,inputs,roots,camera};
 }
+test('bulk IP unassign keeps pending selection when final fresh snapshot still reports an encoder',async()=>{
+ const f=fixture();f.roots.streamingOutput['0']={name:'HLS out',channelIndex:-1,encoderIndex:0,outputOrder:1,enable:false};const e=new Engine(createClient,()=>{},f.fetch);await e.configure({address:'192.0.2.5',key:'test-key'});const {NativePreviews}=require(root+'/native-previews');const p=new NativePreviews();p.verified=true;p.unassignOutputs=async(outputs,extra,confirmed)=>confirmed(outputs.map(o=>o.key));e.native=p;
+ await e.execute({type:'section',section:'OUTPUT'});const output=e.s.data.outputs.find(o=>o.type==='IP');await e.execute({type:'outputBulkStart',mode:'unassign'});await e.execute({type:'outputBulkSelect',key:output.key});await assert.rejects(e.execute({type:'outputBulkRun'}),/still reports an assigned/);assert.deepEqual(e.s.outputBulk.keys,[output.key]);assert.equal(f.roots.streamingOutput['0'].encoderIndex,0);
+});
+for(const native of [false,true])for(const kind of ['SDI','IP','SDI without runtime'])test('bulk unassign '+kind+' encoder route with string indices through '+(native?'native':'REST')+' preserves encoder, profile and power',async()=>{
+ const f=fixture(),type=kind.startsWith('SDI')?'SDI':'IP',rootName=type==='SDI'?'basebandPlayer':'streamingOutput',index=type==='SDI'?'1':'0';
+ const row=f.roots[rootName][index]={name:type==='SDI'?'SDI 1':'HLS out',mode:'HLS',channelIndex:'-1',encoderIndex:'0',outputOrder:1,enable:true};f.roots.enc['1'].inputIndex=0;f.roots.enc['1'].enable=true;const encoder=structuredClone(f.roots.enc['1']);
+ const fetch=async(url,options)=>{const result=await f.fetch(url,options);if(kind==='SDI without runtime'&&new URL(url).pathname==='/outputs')return {ok:true,status:200,json:async()=>({output:[],IPOutput:[],NDIOutput:[]})};return result;};
+ const e=new Engine(createClient,()=>{},fetch);await e.configure({address:'192.0.2.5',key:'test-key'});
+ if(native){const {NativePreviews}=require(root+'/native-previews');const p=new NativePreviews();p.verified=true;p.ws={readyState:1,send:packet=>{const d=JSON.parse(packet.slice(2));if(d[0]==='setProfileConfig')f.roots[d[1]]=JSON.parse(d[3])[d[1]];}};e.native=p;e.extra.native=p;}
+ await e.execute({type:'section',section:'OUTPUT'});await e.execute({type:'outputGroup',group:type});const output=e.s.data.outputs.find(o=>o.type===type&&String(o.configIndex)===index);assert.ok(output);assert.equal(output.encoder,1);
+ await e.execute({type:'outputBulkStart',mode:'unassign'});await e.execute({type:'outputBulkSelect',key:output.key});assert.deepEqual(e.s.outputBulk.keys,[output.key]);await e.execute({type:'outputBulkRun'});
+ const result=f.roots[rootName][index];assert.equal(Number(result.channelIndex),-1);assert.equal(Number(result.encoderIndex),-1);assert.equal(result.enable,row.enable);assert.equal(result.outputOrder,row.outputOrder);assert.deepEqual(f.roots.enc['1'],encoder);assert.equal(e.s.data.outputs.find(o=>o.key===output.key).encoder,null);assert.equal(e.s.outputBulk,null);
+});
 test('built plugin contains no Chrome runtime dependency',()=>{
  const text=fs.readFileSync(root+'/client.js','utf8');assert.doesNotMatch(text,/chrome\.|importScripts|sessionStorage/);
  const manifest=JSON.parse(fs.readFileSync(root+'/../manifest.json'));assert.equal(manifest.Profiles[0].DeviceType,2);

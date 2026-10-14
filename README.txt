@@ -1,4 +1,4 @@
-STREAMHUB XL — QUICK START — 0.18.0
+STREAMHUB XL — QUICK START — 0.18.1
 
 INSTALL
 Windows 10+, Stream Deck app 7.1+, Stream Deck XL or Stream Deck Mobile (32 keys, 8 columns x 4 rows).
@@ -54,6 +54,10 @@ Input ROUTE TO OUTPUT offers ADD TO ENCODER for SDI/IP. NDI remains direct.
 Select outputs, then ASSIGN ONLY or ASSIGN & GO LIVE.
 ENCODERS has BULK ON/OFF and BULK UNASSIGN with multiselection and confirmation.
 Encoder UNASSIGN clears sources only, keeping profiles, power and output assignments.
+OUTPUTS BULK UNASSIGN clears direct-input and encoder routes on SDI, NDI and IP.
+It keeps output profiles/power and encoder source/profile/power unchanged.
+The plugin confirms fresh readback; incomplete outputs remain selected for retry.
+A guarded REST retry handles encoder routes retained after a native update.
 INPUTS separates BULK UNASSIGN (IP profiles) from BULK EJECT (connected devices).
 SELECT INPUT beside input status chooses an eligible IP input profile.
 STATUS DETAILS and Multiview refresh automatically; redundant REFRESH keys are removed.

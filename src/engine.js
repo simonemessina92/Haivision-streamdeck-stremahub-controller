@@ -576,7 +576,9 @@ class Engine {
     if(!this.s.demo&&bulk.mode==='unassign'&&this.native?.verified){
      const confirmed=new Set();
      await this.native.unassignOutputs(plans.map(plan=>this.s.data.outputs.find(o=>o.key===plan.key)),this.extra,keys=>{for(const key of keys)confirmed.add(key);completed=confirmed.size;bulk.keys=initial.filter(key=>!confirmed.has(key));});
-     this.s.data=await this.client.handle({type:'snapshot',fresh:true});return;
+     this.s.data=await this.client.handle({type:'snapshot',fresh:true});
+     const remaining=initial.filter(key=>{const output=this.s.data.outputs.find(o=>o.key===key);return !output||output.source!==null||output.encoder!==null;});
+     if(remaining.length){bulk.keys=remaining;completed=initial.length-remaining.length;throw Error('StreamHub still reports an assigned input or encoder on '+remaining.length+' outputs');}return;
     }
     for(const plan of plans){
      if(this.s.demo){const o=this.s.data.outputs.find(o=>o.key===plan.key);if(bulk.mode==='unassign'){o.source=null;o.encoder=null;}else o.enabled=plan.enabled;this.syncDemoOutputs();}

@@ -1,5 +1,6 @@
 'use strict';
 const GROUPS=['SDI','NDI','IP'];
+function sourceId(value){if((typeof value!=='number'&&typeof value!=='string')||String(value).trim()==='')return null;const index=Number(value);return Number.isInteger(index)&&index>=0?index+1:null;}
 function outputGroup(o){const type=String(o?.type||'').toUpperCase().replace(/[ _-]/g,'');return ['SDI','ST2110','SMPTE2110','PHYSICAL','HARDWARE'].includes(type)?'SDI':type==='NDI'?'NDI':type==='IP'?'IP':null;}
 function channel(o){const n=Number(o?.configIndex??o?.index??o?.id);return Number.isInteger(n)&&n>=1?n:null;}
 function rows(data,group){return data.outputs.filter(o=>outputGroup(o)===group).sort((a,b)=>(channel(a)||0)-(channel(b)||0));}
@@ -9,7 +10,7 @@ function ipProfiles(data){return data.outputProfiles.filter(p=>outputGroup(p)===
 function assignedConfig(config,limit=Infinity){return Object.entries(config).filter(([id,row])=>Number(id)>=1&&Number(id)<=limit&&row&&row.outputOrder!==undefined&&Number(row.outputOrder)>=0).map(([id])=>Number(id));}
 function assertConfigEject(config,id,limit=Infinity){const ids=assignedConfig(config,limit);if(Number(id)!==Math.max(0,...ids))throw Error('Eject the highest-numbered physical or NDI output first');}
 function assertConfigAdd(config,id,limit=Infinity){const ids=assignedConfig(config,limit),last=Math.max(0,...ids);if(Number(id)!==last+1||Number(id)>limit||!Array.from({length:last},(_,n)=>n+1).every(n=>ids.includes(n)))throw Error('Add the next physical or NDI output in numeric order');}
-module.exports={GROUPS,outputGroup,channel,rows,canEjectOutput,nextOutputProfile,ipProfiles,assertConfigEject,assertConfigAdd};
+module.exports={GROUPS,outputGroup,channel,rows,canEjectOutput,nextOutputProfile,ipProfiles,assertConfigEject,assertConfigAdd,sourceId};
 function supportedGroups(s){
  const m=s.capabilities||{},data=s.data;
  return GROUPS.filter(group=>{

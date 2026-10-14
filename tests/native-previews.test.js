@@ -10,6 +10,37 @@ class Socket{
  packet(data){this.onmessage({data});}
 }
 const connection={base:'http://192.0.2.1:8893',key:'rest-key'},identity={hardwareIdentifier:'server-1'};
+for(const rootName of ['basebandPlayer','streamingOutput'])test('unassign retries retained '+rootName+' encoder using guarded REST fields only',async()=>{
+ const p=new NativePreviews();p.verified=true;p.ws={readyState:1};let row={name:'Output',channelIndex:2,encoderIndex:0,outputOrder:1,enable:true,custom:'keep'},confirmed=false;const writes=[];
+ p.setConfigRows=async()=>{row.channelIndex=-1;throw Error('StreamHub did not confirm '+rootName+' update');};
+ const extra={config:async()=>({'1':structuredClone(row)}),request:async(path,body)=>{assert.equal(path,'/config/item');writes.push(body);row[body.item.split('.').at(-1)]=body.value;}};
+ await p.unassignOutputs([{root:rootName,configIndex:'1',name:'Output',key:'out',encoder:1}],extra,()=>{confirmed=true;});assert.equal(confirmed,true);assert.deepEqual(writes,[{item:rootName+'.1.encoderIndex',value:-1}]);assert.deepEqual(row,{name:'Output',channelIndex:-1,encoderIndex:-1,outputOrder:1,enable:true,custom:'keep'});
+});
+test('REST unassign retry rejects a newly assigned encoder and preserves that assignment',async()=>{
+ const p=new NativePreviews();p.verified=true;p.ws={readyState:1};let row={name:'Output',channelIndex:-1,encoderIndex:0,outputOrder:1,enable:false},writes=0;
+ p.setConfigRows=async()=>{row.encoderIndex=2;throw Error('StreamHub did not confirm streamingOutput update');};
+ await assert.rejects(p.unassignOutputs([{root:'streamingOutput',configIndex:'1',name:'Output',key:'out'}],{config:async()=>({'1':{...row}}),request:async()=>{writes++;}}),/assignment changed/);assert.equal(writes,0);assert.equal(row.encoderIndex,2);
+});
+for(const rootName of ['basebandPlayer','streamingOutput'])test('native unassign rejects '+rootName+' when server retains encoder and never confirms partial clearing',async()=>{
+ const p=new NativePreviews();p.verified=true;let row={name:'Output',channelIndex:2,encoderIndex:0,outputOrder:1,enable:true},confirmed=false;
+ p.ws={readyState:1,send:()=>{row.channelIndex=-1;}};
+ await assert.rejects(p.unassignOutputs([{root:rootName,configIndex:'1',name:'Output',key:'out',encoder:1}],{config:async()=>({'1':structuredClone(row)})},()=>{confirmed=true;}),/did not confirm/);assert.equal(row.encoderIndex,0);assert.equal(row.enable,true);assert.equal(confirmed,false);
+});
+test('native output unassign rejects changed assignment immediately before writing',async()=>{
+ const p=new NativePreviews();p.verified=true;let reads=0,writes=0;const row={name:'Output',channelIndex:-1,encoderIndex:0,outputOrder:1,enable:false};p.ws={readyState:1,send:()=>{writes++;}};
+ await assert.rejects(p.unassignOutputs([{root:'streamingOutput',configIndex:'1',name:'Output',key:'out'}],{config:async()=>({'1':{...row,encoderIndex:++reads===1?0:2}})}),/assignment changed/);assert.equal(writes,0);
+});
+test('native output readback from a replaced connection cannot confirm an unassign',async()=>{
+ const p=new NativePreviews();p.verified=true;let reads=0,confirmed=false;const row={name:'Output',channelIndex:-1,encoderIndex:0,outputOrder:1,enable:false};p.ws={readyState:1,send:()=>{}};
+ await assert.rejects(p.unassignOutputs([{root:'streamingOutput',configIndex:'1',name:'Output',key:'out'}],{config:async()=>{if(++reads===3){p.generation++;return {'1':{...row,encoderIndex:-1}};}return {'1':{...row}};}},()=>{confirmed=true;}),/connection changed/);assert.equal(confirmed,false);
+});
+test('native bulk unassign clears both route fields on SDI, NDI and IP, preserving unrelated rows and presets without encoder fields',async()=>{
+ const p=new NativePreviews();p.verified=true;const roots=Object.fromEntries(['basebandPlayer','NDIOutput','streamingOutput'].map(root=>[root,{'0':{name:root+' 0',channelIndex:-1,encoderIndex:0,outputOrder:0,enable:true},'8':{name:root+' 8',channelIndex:3,outputOrder:8,enable:false},'9':{name:root+' 9',channelIndex:4,encoderIndex:2,outputOrder:9,enable:true}}]));const before=structuredClone(roots),confirmed=[];
+ p.ws={readyState:1,send:packet=>{const d=JSON.parse(packet.slice(2));if(d[0]==='setProfileConfig')roots[d[1]]=JSON.parse(d[3])[d[1]];}};
+ const outputs=Object.keys(roots).flatMap(root=>['0','8'].map(index=>({root,configIndex:index,name:roots[root][index].name,key:root+':'+index})));
+ await p.unassignOutputs(outputs,{config:async root=>structuredClone(roots[root])},keys=>confirmed.push(...keys));assert.equal(confirmed.length,6);
+ for(const root of Object.keys(roots)){assert.equal(roots[root]['0'].channelIndex,-1);assert.equal(roots[root]['0'].encoderIndex,-1);assert.equal(roots[root]['0'].enable,true);assert.equal(roots[root]['0'].outputOrder,0);assert.equal(roots[root]['8'].channelIndex,-1);assert.ok(!('encoderIndex'in roots[root]['8']));assert.deepEqual(roots[root]['9'],before[root]['9']);}
+});
 test('standalone web login returns a token and opens only the read-only preview channel',async t=>{
  let body;const frames=[],saved=[];
  const p=new NativePreviews({WebSocketClass:Socket,fetchFn:async(url,options)=>{assert.equal(new URL(url).pathname,'/login');body=JSON.parse(options.body);return {ok:true,json:async()=>({token:'web-token'})};},onToken:token=>saved.push(token),onFrame:f=>frames.push(f)});
