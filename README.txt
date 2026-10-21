@@ -50,7 +50,7 @@ LIVE PROFILE on compatible transmitters selects an existing preset without start
 MULTIVIEW builds a 1 x 1 to 4 x 4 grid; PAGE switches between two sets of 16 sources.
 Live inputs show cell previews. BASIC hides information overlays.
 Multiview SDI/NDI routing is direct; IP routing uses an encoding profile, not passthrough.
-Input ROUTE TO OUTPUT offers ADD TO ENCODER for SDI/IP. NDI remains direct.
+Input ROUTE TO OUTPUT offers SELECT ENCODER for SDI/IP. NDI remains direct.
 Select outputs, then ASSIGN ONLY or ASSIGN & GO LIVE.
 ENCODERS has BULK ON/OFF and BULK UNASSIGN with multiselection and confirmation.
 Encoder UNASSIGN clears sources only, keeping profiles, power and output assignments.
