@@ -51,7 +51,7 @@ REST API access uses HTTP 8893 or HTTPS 8896; web login and previews use HTTP 88
 
 - **STATUS DETAILS** is available on inputs, outputs and encoders. CONFIG shows reported stream parameters, STATS shows available live measurements, and ALERTS shows errors and warnings. These pages are read-only.
 - **LIVE PROFILE** on a compatible connected transmitter selects an existing encoding preset. The current preset is highlighted; changing it does not start the input.
-- **ROUTE TO OUTPUT** on an input offers optional **ADD TO ENCODER**. Choose an encoder, select SDI/IP destinations, then **ASSIGN ONLY** or **ASSIGN & GO LIVE**. NDI stays available on direct routing.
+- **ROUTE TO OUTPUT** on an input offers an optional **SELECT ENCODER** step. Choose an encoder, select SDI/IP destinations, then **ASSIGN ONLY** or **ASSIGN & GO LIVE**. NDI stays available on direct routing.
 - **BULK ON/OFF** in ENCODERS toggles selected encoders after confirmation, preserving their sources and profiles.
 - **BULK UNASSIGN** in ENCODERS clears selected input sources while retaining encoding profiles, power states and output assignments.
 - **BULK UNASSIGN** in OUTPUTS disconnects both direct input and encoder routes on selected SDI, NDI and IP outputs. Output profiles, power states and encoder input/profile assignments are retained. The plugin rereads the configuration before confirming success; incomplete operations remain selected for retry. If a native update leaves an encoder assigned, a guarded REST retry clears only the selected routing fields.
@@ -76,7 +76,7 @@ Do not share your personal settings or backups.
 
 ## Building from source
 
-`main` is the stable branch; `develop` is for ongoing work. Version **0.18.1** is the current golden release, approved by the project owner after local testing of the SDI/IP output unassign fix. Additional testing on the Haibox using the GitHub download is planned. Stream Deck XL and two registered Mobile devices were verified in previous testing. The v0.18.0 release remains available.
+`main` is the stable branch; `develop` is for ongoing work. Version **0.18.1** is the current golden release. Stream Deck XL and two registered Mobile devices were verified on hardware. Previous releases remain available on the Releases page.
 
 Install Node.js 24, then run:
 
